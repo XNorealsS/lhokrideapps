@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "883705090631",
+    "firebase_url": "https://lhokrideplus-548c0-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "lhokrideplus-548c0",
+    "storage_bucket": "lhokrideplus-548c0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:883705090631:android:3b9fb2fe54c01a9a221762",
+        "android_client_info": {
+          "package_name": "com.lhokrideplus.lsm"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDrwG1nKxAaWe92PyWs-ybFIaKPP_mY61s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
