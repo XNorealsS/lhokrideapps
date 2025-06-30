@@ -8,12 +8,57 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'component/chat_dialog.dart';
-import '../../utils/location_utils.dart';
+import '../../utils/location_utils.dart'; // Ensure this is still relevant or remove if not used
 import 'package:flutter_map/flutter_map.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart'; // Keep if you plan to cluster markers, otherwise can remove
 import 'package:flutter_map/flutter_map.dart' show TileLayer;
 import 'package:url_launcher/url_launcher.dart';
+
+// Dummy DottedLine widget - replace with an actual package like `dotted_line` if desired for better control.
+class DottedLine extends StatelessWidget {
+  final Color dashColor;
+  final double dashLength;
+  final double dashGapLength;
+  final double lineThickness;
+  final Axis direction;
+  final double lineLength;
+
+  const DottedLine({
+    Key? key,
+    this.dashColor = Colors.black,
+    this.dashLength = 4.0,
+    this.dashGapLength = 4.0,
+    this.lineThickness = 1.0,
+    this.direction = Axis.horizontal,
+    this.lineLength = 50.0,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double len =
+            direction == Axis.horizontal
+                ? constraints.constrainWidth()
+                : lineLength;
+        final int dashCount = (len / (dashLength + dashGapLength)).floor();
+        return Flex(
+          direction: direction,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(dashCount, (_) {
+            return SizedBox(
+              width: direction == Axis.horizontal ? dashLength : lineThickness,
+              height: direction == Axis.vertical ? dashLength : lineThickness,
+              child: DecoratedBox(decoration: BoxDecoration(color: dashColor)),
+            );
+          }),
+        );
+      },
+    );
+  }
+}
+
 
 class RideProgressScreen extends StatefulWidget {
   final String rideId;
@@ -46,6 +91,11 @@ class _RideProgressScreenState extends State<RideProgressScreen>
   static const Color _accentColor = Color(0xFFFFCC80);
   static const Color _lightGreyColor = Color(0xFFF5F5F5);
   static const Color _textColor = Color(0xFF333333); // Dark grey for text
+  static const Color _successColor = Colors.green;
+  static const Color _infoColor = Colors.blue;
+  static const Color _warningColor = Colors.amber;
+  static const Color _errorColor = Colors.red;
+
 
   // Services
   final _storage = const FlutterSecureStorage();
@@ -64,6 +114,8 @@ class _RideProgressScreenState extends State<RideProgressScreen>
   double _distance = 0;
   int _eta = 0;
   List<LatLng> _routePoints = [];
+  bool _isCalculatingRoute = false; // New: for route calculation loading
+
 
   // UI state
   bool _isUpdatingStatus = false;
@@ -105,9 +157,8 @@ class _RideProgressScreenState extends State<RideProgressScreen>
       if (mounted) {
         setState(() {
           _currentSheetExtent = _sheetController.size;
-          _isSheetFullyExpanded =
-              _currentSheetExtent >=
-              0.7; // Define what "fully expanded" means for your design
+          // Define what "fully expanded" means for your design
+          _isSheetFullyExpanded = _currentSheetExtent >= 0.7;
         });
 
         // Hide FABs when sheet is expanding, show when collapsing/collapsed
@@ -323,10 +374,12 @@ class _RideProgressScreenState extends State<RideProgressScreen>
                 position.longitude,
               );
             });
-            _calculateRoute();
+            // Only recalculate route if not already doing so to avoid spamming API
+            if (!_isCalculatingRoute) {
+              _calculateRoute();
+            }
             // Center map on driver when location updates only if the sheet is not expanded
             if (_currentSheetExtent < 0.2) {
-              // Adjust this threshold as needed
               _centerMapOnDriver();
             }
           }
@@ -375,8 +428,28 @@ class _RideProgressScreenState extends State<RideProgressScreen>
   }
 
   Future<void> _calculateRoute() async {
+    if (_isCalculatingRoute) return;
+
+    setState(() {
+      _isCalculatingRoute = true;
+      _routePoints = []; // Clear existing route points immediately
+      _distance = 0;
+      _eta = 0;
+    });
+
     try {
-      if (_currentDriverLocation == null) return;
+      if (_currentDriverLocation == null) {
+        // If driver location is not available, try to get it once
+        final position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+        if (mounted) {
+          setState(() {
+            _currentDriverLocation = LatLng(position.latitude, position.longitude);
+          });
+        }
+        if (_currentDriverLocation == null) return; // Still null, exit
+      }
 
       LatLng startPoint;
       LatLng endPoint;
@@ -390,9 +463,7 @@ class _RideProgressScreenState extends State<RideProgressScreen>
       } else {
         if (mounted) {
           setState(() {
-            _routePoints = [];
-            _distance = 0;
-            _eta = 0;
+            _isCalculatingRoute = false; // Reset loading state
           });
         }
         return;
@@ -420,8 +491,15 @@ class _RideProgressScreenState extends State<RideProgressScreen>
           _eta = 0;
         });
       }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCalculatingRoute = false; // Reset loading state
+        });
+      }
     }
   }
+
 
   void _centerMapOnDriver() {
     if (_currentDriverLocation != null && _isMapReady) {
@@ -681,7 +759,7 @@ class _RideProgressScreenState extends State<RideProgressScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.green,
+        backgroundColor: _successColor,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -693,7 +771,7 @@ class _RideProgressScreenState extends State<RideProgressScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: _errorColor,
         duration: const Duration(seconds: 3),
       ),
     );
@@ -870,6 +948,18 @@ class _RideProgressScreenState extends State<RideProgressScreen>
   }
 
   Widget _buildMap() {
+    if (!_isInitialized) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: _primaryColor),
+            SizedBox(height: 16),
+            Text("Memuat Peta...", style: TextStyle(color: _textColor)),
+          ],
+        ),
+      );
+    }
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
@@ -915,17 +1005,17 @@ class _RideProgressScreenState extends State<RideProgressScreen>
         break;
       case 'in_progress':
         statusText = "Dalam Perjalanan";
-        statusColor = Colors.blue.shade600;
+        statusColor = _infoColor;
         statusIcon = Icons.directions_car;
         break;
       case 'completed':
         statusText = "Selesai";
-        statusColor = Colors.green.shade600;
+        statusColor = _successColor;
         statusIcon = Icons.check_circle;
         break;
       case 'cancelled':
         statusText = "Dibatalkan";
-        statusColor = Colors.red.shade600;
+        statusColor = _errorColor;
         statusIcon = Icons.cancel;
         break;
       default:
@@ -934,35 +1024,37 @@ class _RideProgressScreenState extends State<RideProgressScreen>
         statusIcon = Icons.help_outline;
         break;
     }
+    double screenWidth = MediaQuery.of(context).size.width;
+    double screenHeight = MediaQuery.of(context).size.height;
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: MediaQuery.of(context).size.width * 0.03,
-        vertical: MediaQuery.of(context).size.height * 0.008,
+        horizontal: screenWidth * 0.04,
+        vertical: screenHeight * 0.01,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(25),
-        border: Border.all(color: statusColor, width: 2),
+        borderRadius: BorderRadius.circular(screenWidth * 0.06),
+        border: Border.all(color: statusColor.withOpacity(0.5), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: statusColor.withOpacity(0.3),
+            color: statusColor.withOpacity(0.2),
             blurRadius: 8,
             spreadRadius: 1,
-            offset: const Offset(0, 2),
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(statusIcon, color: statusColor, size: 16),
-          SizedBox(width: MediaQuery.of(context).size.width * 0.02),
+          Icon(statusIcon, color: statusColor, size: screenWidth * 0.045),
+          SizedBox(width: screenWidth * 0.02),
           Text(
             statusText,
             style: TextStyle(
               color: statusColor,
               fontWeight: FontWeight.bold,
-              fontSize: MediaQuery.of(context).size.width * 0.032,
+              fontSize: screenWidth * 0.035,
             ),
           ),
         ],
@@ -1055,14 +1147,14 @@ class _RideProgressScreenState extends State<RideProgressScreen>
                   FloatingActionButton.small(
                     heroTag: "callPassenger",
                     onPressed: _callPassenger,
-                    backgroundColor: Colors.green,
+                    backgroundColor: _successColor,
                     child: const Icon(Icons.call, color: Colors.white),
                   ),
                   SizedBox(width: screenWidth * 0.02),
                   FloatingActionButton.small(
                     heroTag: "chatPassenger",
                     onPressed: () => _openChatDialog(context),
-                    backgroundColor: Colors.blue,
+                    backgroundColor: _infoColor,
                     child: const Icon(Icons.chat, color: Colors.white),
                   ),
                 ],
@@ -1118,23 +1210,26 @@ class _RideProgressScreenState extends State<RideProgressScreen>
                   Colors.red,
                 ),
                 SizedBox(height: screenHeight * 0.02),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _buildMetricChip(
-                      context,
-                      Icons.map,
-                      "${_distance.toStringAsFixed(1)} km",
-                      "Jarak",
-                    ),
-                    _buildMetricChip(
-                      context,
-                      Icons.access_time,
-                      "$_eta mnt",
-                      "ETA",
-                    ),
-                  ],
-                ),
+                // Route metrics with loading indicators
+                _isCalculatingRoute
+                    ? _buildMetricsPlaceholder(screenWidth, screenHeight)
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildMetricChip(
+                            context,
+                            Icons.map,
+                            "${_distance.toStringAsFixed(1)} km",
+                            "Jarak",
+                          ),
+                          _buildMetricChip(
+                            context,
+                            Icons.access_time,
+                            "$_eta mnt",
+                            "ETA",
+                          ),
+                        ],
+                      ),
               ],
             ),
           ),
@@ -1145,6 +1240,54 @@ class _RideProgressScreenState extends State<RideProgressScreen>
       ],
     );
   }
+
+  Widget _buildMetricsPlaceholder(double screenWidth, double screenHeight) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: [
+        _buildShimmerMetricChip(screenWidth, screenHeight),
+        _buildShimmerMetricChip(screenWidth, screenHeight),
+      ],
+    );
+  }
+
+  Widget _buildShimmerMetricChip(double screenWidth, double screenHeight) {
+    return Expanded(
+      child: Container(
+        margin: EdgeInsets.symmetric(horizontal: screenWidth * 0.01),
+        padding: EdgeInsets.symmetric(
+          vertical: screenHeight * 0.01,
+          horizontal: screenWidth * 0.01,
+        ),
+        decoration: BoxDecoration(
+          color: _lightGreyColor.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: screenWidth * 0.06,
+              height: screenWidth * 0.06,
+              color: Colors.grey.shade300,
+            ),
+            SizedBox(height: screenHeight * 0.005),
+            Container(
+              width: screenWidth * 0.15,
+              height: screenHeight * 0.02,
+              color: Colors.grey.shade300,
+            ),
+            SizedBox(height: screenHeight * 0.005),
+            Container(
+              width: screenWidth * 0.1,
+              height: screenHeight * 0.015,
+              color: Colors.grey.shade300,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   Widget _buildInfoRow(
     BuildContext context,
@@ -1184,14 +1327,14 @@ class _RideProgressScreenState extends State<RideProgressScreen>
       ],
     );
   }
-    
+
 
   Widget _buildMetricChip(
     BuildContext context,
     IconData icon,
     String value,
     String label,
-    
+
   ) {
        double screenWidth = MediaQuery.of(context).size.width;
     double screenHeight = MediaQuery.of(context).size.height;
@@ -1259,7 +1402,7 @@ class _RideProgressScreenState extends State<RideProgressScreen>
               style: TextStyle(fontSize: screenWidth * 0.04),
             ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
+              backgroundColor: _successColor, // Use success color
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(screenWidth * 0.04),
@@ -1302,6 +1445,35 @@ class _RideProgressScreenState extends State<RideProgressScreen>
               minimumSize: Size(screenWidth * 0.9, screenHeight * 0.06),
             ),
           ),
+        // Add a "Call Passenger" button that fades in/out with FAB animation
+        // This button is always available, but its visibility is animated.
+        SizedBox(height: screenHeight * 0.015),
+        FadeTransition(
+          opacity: _fabAnimation,
+          child: ScaleTransition(
+            scale: _fabAnimation,
+            child: ElevatedButton.icon(
+              onPressed: _callPassenger,
+              icon: Icon(Icons.phone, size: screenWidth * 0.05),
+              label: Text(
+                "Telepon Penumpang",
+                style: TextStyle(fontSize: screenWidth * 0.038),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey.shade200,
+                foregroundColor: _textColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(screenWidth * 0.04),
+                ),
+                padding: EdgeInsets.symmetric(
+                  horizontal: screenWidth * 0.04,
+                  vertical: screenHeight * 0.012,
+                ),
+                minimumSize: Size(screenWidth * 0.9, screenHeight * 0.055),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1309,6 +1481,8 @@ class _RideProgressScreenState extends State<RideProgressScreen>
   @override
   Widget build(BuildContext context) {
     double screenHeight = MediaQuery.of(context).size.height;
+    double screenWidth = MediaQuery.of(context).size.width;
+
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -1324,16 +1498,16 @@ class _RideProgressScreenState extends State<RideProgressScreen>
         children: [
           // Map Layer
           SizedBox(
-            width: MediaQuery.of(context).size.width,
-            height: MediaQuery.of(context).size.height,
+            width: screenWidth,
+            height: screenHeight,
             child: _buildMap(),
           ),
 
           // Status Indicator
           Positioned(
             top: MediaQuery.of(context).padding.top + screenHeight * 0.02,
-            left: MediaQuery.of(context).size.width * 0.05,
-            right: MediaQuery.of(context).size.width * 0.05,
+            left: screenWidth * 0.05,
+            right: screenWidth * 0.05,
             child: Align(
               alignment: Alignment.topCenter,
               child: _buildStatusIndicator(),
@@ -1351,8 +1525,6 @@ class _RideProgressScreenState extends State<RideProgressScreen>
                 BuildContext context,
                 ScrollController scrollController,
               ) {
-                    double screenWidth = MediaQuery.of(context).size.width;
-    double screenHeight = MediaQuery.of(context).size.height;
                 return Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -1376,7 +1548,7 @@ class _RideProgressScreenState extends State<RideProgressScreen>
                           vertical: screenHeight * 0.01,
                         ),
                         child: Container(
-                          width: MediaQuery.of(context).size.width * 0.1,
+                          width: screenWidth * 0.1,
                           height: screenHeight * 0.005,
                           decoration: BoxDecoration(
                             color: Colors.grey[300],
@@ -1391,8 +1563,7 @@ class _RideProgressScreenState extends State<RideProgressScreen>
                         child: SingleChildScrollView(
                           controller: scrollController,
                           padding: EdgeInsets.symmetric(
-                            horizontal:
-                                MediaQuery.of(context).size.width * 0.04,
+                            horizontal: screenWidth * 0.04,
                           ),
                           child: _buildPassengerInfoContent(),
                         ),
@@ -1409,46 +1580,5 @@ class _RideProgressScreenState extends State<RideProgressScreen>
   }
 }
 
-// Dummy DottedLine widget for demonstration (replace with actual package if needed)
-class DottedLine extends StatelessWidget {
-  final Color dashColor;
-  final double dashLength;
-  final double dashGapLength;
-  final double lineThickness;
-  final Axis direction;
-  final double lineLength;
-
-  const DottedLine({
-    Key? key,
-    this.dashColor = Colors.black,
-    this.dashLength = 4.0,
-    this.dashGapLength = 4.0,
-    this.lineThickness = 1.0,
-    this.direction = Axis.horizontal,
-    this.lineLength = 50.0,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double len =
-            direction == Axis.horizontal
-                ? constraints.constrainWidth()
-                : lineLength;
-        final int dashCount = (len / (dashLength + dashGapLength)).floor();
-        return Flex(
-          direction: direction,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(dashCount, (_) {
-            return SizedBox(
-              width: direction == Axis.horizontal ? dashLength : lineThickness,
-              height: direction == Axis.vertical ? dashLength : lineThickness,
-              child: DecoratedBox(decoration: BoxDecoration(color: dashColor)),
-            );
-          }),
-        );
-      },
-    );
-  }
-}
+// Ensure ChatService and other utility functions are correctly implemented elsewhere
+// as they are imported but not provided in the original code snippet for this request.

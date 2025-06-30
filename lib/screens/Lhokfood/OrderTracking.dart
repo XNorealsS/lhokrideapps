@@ -11,7 +11,9 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart'; // For loading indicators
 import 'dart:math' as math;
-import 'package:lhokride/services/firebase_service.dart'; // sesuaikan path-nya
+// Import the sliding_up_panel package
+import 'package:sliding_up_panel/sliding_up_panel.dart';
+
 
 // Assuming AppColors are defined globally or in a common utility file
 class AppColors {
@@ -57,6 +59,9 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
     with TickerProviderStateMixin {
   // Map and Location Variables
   final MapController _mapController = MapController();
+  // Using PanelController for SlidingUpPanel
+  final PanelController _panelController = PanelController();
+
   LatLng? _driverLocation;
   LatLng?
   _partnerLocation; // Renamed from _pickupLocation for clarity with existing code
@@ -81,9 +86,9 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
   double _deliveryFee = 0.0; // Variable for delivery fee
 
   // UI State
-  double _panelHeight = 0.0;
-  bool _isPanelExpanded = false;
-  late AnimationController _panelAnimationController;
+  // double _panelHeight = 0.0; // No longer needed with SlidingUpPanel
+  // bool _isPanelExpanded = false; // No longer explicitly needed for panel state
+  // late AnimationController _panelAnimationController; // No longer needed
   late Animation<double> _fabAnimation;
   late AnimationController _fabAnimationController;
   bool _isLoadingOrderDetails = true; // New loading indicator
@@ -99,10 +104,10 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
   @override
   void initState() {
     super.initState();
-    _panelAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
+    // _panelAnimationController = AnimationController( // No longer needed
+    //   vsync: this,
+    //   duration: const Duration(milliseconds: 300),
+    // );
     _fabAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -141,7 +146,13 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
 
   Future<void> _initializeOrderTracking() async {
     await _fetchOrderDetailsAndListen(); // Renamed to include listening
-    _togglePanel(); // Open panel by default
+    // No explicit _togglePanel needed, SlidingUpPanel handles initial state
+    // We can directly open the panel
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_panelController.isAttached) {
+        _panelController.show();
+      }
+    });
   }
 
   Future<void> _fetchOrderDetailsAndListen() async {
@@ -503,21 +514,22 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
     }
   }
 
-  void _togglePanel() {
-    setState(() {
-      _isPanelExpanded = !_isPanelExpanded;
-      if (_isPanelExpanded) {
-        _panelHeight =
-            MediaQuery.of(context).size.height * 0.55; // Adjust as needed
-        _panelAnimationController.forward();
-        _fabAnimationController.forward();
-      } else {
-        _panelHeight = 0.0;
-        _panelAnimationController.reverse();
-        _fabAnimationController.reverse();
-      }
-    });
-  }
+  // Removed _togglePanel as SlidingUpPanel handles its own state
+  // void _togglePanel() {
+  //   setState(() {
+  //     _isPanelExpanded = !_isPanelExpanded;
+  //     if (_isPanelExpanded) {
+  //       _panelHeight =
+  //           MediaQuery.of(context).size.height * 0.55; // Adjust as needed
+  //       _panelAnimationController.forward();
+  //       _fabAnimationController.forward();
+  //     } else {
+  //       _panelHeight = 0.0;
+  //       _panelAnimationController.reverse();
+  //       _fabAnimationController.reverse();
+  //     }
+  //   });
+  // }
 
   Future<void> _makePhoneCall(String phoneNumber) async {
     final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
@@ -543,7 +555,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
 
   void _stopRadarAnimation() {
     _radarAnimationController.stop();
-    _radarAnimationController.dispose();
+    // No need to dispose here, it will be disposed in the main dispose
   }
 
   void _disposeListeners() {
@@ -551,75 +563,128 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
     _driverLocationSubscription?.cancel();
   }
 
-  Widget _buildStatusHeader() {
+  Widget _buildStatusHeader(double scaleFactor) {
     int currentStep = _getStepIndex(_currentOrderStatus);
-    int totalSteps =
-        5; // Accepted, To Restaurant, Arrived, Picked Up, On The Way To Destination, Delivered (6 steps total visually for 0-5 index)
+    // Adjusted total steps to align with the visual progress bar
+    // Accepted (1), To Restaurant (2), Arrived At Restaurant (3), Picked Up (4), On The Way To Destination (5), Delivered (6)
+    int totalSteps = 6;
+
+    IconData statusIcon;
+    Color statusIconColor;
+    String statusSubtitle;
+
+    switch (_currentOrderStatus) {
+      case _OrderStatus.pending:
+        statusIcon = Icons.pending_actions;
+        statusIconColor = AppColors.primaryOrange;
+        statusSubtitle = "Pesanan Anda sedang menunggu konfirmasi penjual.";
+        break;
+      case _OrderStatus.accepted:
+        statusIcon = Icons.check_circle_outline;
+        statusIconColor = AppColors.gojekGreen;
+        statusSubtitle = "Driver telah menerima pesanan Anda.";
+        break;
+      case _OrderStatus.preparing:
+        statusIcon = Icons.restaurant_menu;
+        statusIconColor = AppColors.primaryOrange;
+        statusSubtitle = "Penjual sedang menyiapkan pesanan Anda.";
+        break;
+      case _OrderStatus.toRestaurant:
+        statusIcon = Icons.directions_bike;
+        statusIconColor = AppColors.gojekGreen;
+        statusSubtitle = "Driver sedang menuju ke penjual.";
+        break;
+      case _OrderStatus.arrivedAtRestaurant:
+        statusIcon = Icons.storefront;
+        statusIconColor = AppColors.gojekGreen;
+        statusSubtitle = "Driver sudah tiba di penjual.";
+        break;
+      case _OrderStatus.pickedUp:
+        statusIcon = Icons.shopping_bag;
+        statusIconColor = AppColors.gojekGreen;
+        statusSubtitle = "Pesanan Anda sudah diambil driver.";
+        break;
+      case _OrderStatus.onTheWayToDestination:
+        statusIcon = Icons.delivery_dining;
+        statusIconColor = AppColors.gojekGreen;
+        statusSubtitle = "Driver sedang menuju lokasi Anda.";
+        break;
+      case _OrderStatus.delivered:
+        statusIcon = Icons.check_circle;
+        statusIconColor = AppColors.successGreen;
+        statusSubtitle = "Pesanan Anda telah tiba!";
+        break;
+      case _OrderStatus.canceled:
+        statusIcon = Icons.cancel;
+        statusIconColor = Colors.red;
+        statusSubtitle = "Pesanan Anda telah dibatalkan.";
+        break;
+    }
+
 
     return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      color: AppColors.cardBg, // Use card background color for header
+      padding: EdgeInsets.symmetric(horizontal: 20 * scaleFactor, vertical: 15 * scaleFactor),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.access_time, color: AppColors.primaryOrange, size: 24),
-              const SizedBox(width: 8),
+              Icon(Icons.access_time, color: AppColors.primaryOrange, size: 24 * scaleFactor),
+              SizedBox(width: 8 * scaleFactor),
               Text(
                 'Estimasi Tiba: ${_estimatedDeliveryTime ?? (_isDriverFound ? "Menghitung..." : "Menunggu Driver...")}',
-                style: const TextStyle(
-                  fontSize: 16,
+                style: TextStyle(
+                  fontSize: 16 * scaleFactor,
                   fontWeight: FontWeight.bold,
                   color: AppColors.primaryOrange,
                 ),
               ),
               const Spacer(),
               Icon(
-                _currentOrderStatus == _OrderStatus.delivered
-                    ? Icons.check_circle
-                    : (_currentOrderStatus == _OrderStatus.canceled
-                        ? Icons.cancel
-                        : Icons.delivery_dining),
-                color:
-                    _currentOrderStatus == _OrderStatus.delivered
-                        ? AppColors.successGreen
-                        : (_currentOrderStatus == _OrderStatus.canceled
-                            ? Colors.red
-                            : AppColors.gojekGreen),
-                size: 30,
+                statusIcon,
+                color: statusIconColor,
+                size: 30 * scaleFactor,
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10 * scaleFactor),
           Text(
             _getOrderStatusText(_currentOrderStatus),
-            style: const TextStyle(
-              fontSize: 18,
+            style: TextStyle(
+              fontSize: 18 * scaleFactor,
               fontWeight: FontWeight.bold,
               color: AppColors.darkGrey,
             ),
           ),
-          const SizedBox(height: 15),
+          SizedBox(height: 5 * scaleFactor),
+          Text(
+            statusSubtitle,
+            style: TextStyle(
+              fontSize: 13 * scaleFactor,
+              color: AppColors.greyText,
+            ),
+          ),
+          SizedBox(height: 15 * scaleFactor),
           LinearProgressIndicator(
             value:
                 currentStep /
                 totalSteps, // Adjusted total steps for the new stages
-            backgroundColor: AppColors.lightOrange,
+            backgroundColor: AppColors.lightOrange.withOpacity(0.5), // Lighter background
             valueColor: const AlwaysStoppedAnimation<Color>(
               AppColors.gojekGreen,
             ),
-            minHeight: 8,
+            minHeight: 8 * scaleFactor,
             borderRadius: BorderRadius.circular(10),
           ),
-          const SizedBox(height: 5),
+          SizedBox(height: 5 * scaleFactor),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Diterima', // Accepted
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 10 * scaleFactor,
                   color:
                       currentStep >= 1
                           ? AppColors.gojekGreen
@@ -629,7 +694,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
               Text(
                 'Tiba Di Toko', // Arrived at Restaurant
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 10 * scaleFactor,
                   color:
                       currentStep >= 3
                           ? AppColors.gojekGreen
@@ -639,7 +704,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
               Text(
                 'Diambil', // Picked Up
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 10 * scaleFactor,
                   color:
                       currentStep >= 4
                           ? AppColors.gojekGreen
@@ -649,7 +714,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
               Text(
                 'Pengiriman', // On The Way To Destination
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 10 * scaleFactor,
                   color:
                       currentStep >= 5
                           ? AppColors.gojekGreen
@@ -659,7 +724,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
               Text(
                 'Tiba', // Delivered
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 10 * scaleFactor,
                   color:
                       currentStep >= 6
                           ? AppColors.gojekGreen
@@ -673,146 +738,212 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
     );
   }
 
-  Widget _buildSlidingPanel() {
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      bottom: 0,
-      left: 0,
-      right: 0,
-      height: _panelHeight,
-      child: GestureDetector(
-        onVerticalDragUpdate: (details) {
-          setState(() {
-            _panelHeight -= details.primaryDelta!;
-            if (_panelHeight < 0) _panelHeight = 0;
-            if (_panelHeight > MediaQuery.of(context).size.height * 0.8) {
-              _panelHeight = MediaQuery.of(context).size.height * 0.8;
-            }
-          });
-        },
-        onVerticalDragEnd: (details) {
-          if (_panelHeight < MediaQuery.of(context).size.height * 0.3) {
-            _panelHeight = 0.0;
-            _isPanelExpanded = false;
-            _fabAnimationController.reverse();
-          } else {
-            _panelHeight = MediaQuery.of(context).size.height * 0.55;
-            _isPanelExpanded = true;
-            _fabAnimationController.forward();
-          }
-        },
-        child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+  // Renamed from _buildSlidingPanel to _buildPanelContent as it's passed to SlidingUpPanel
+  Widget _buildPanelContent(ScrollController scrollController, double scaleFactor) {
+    return Column(
+      children: [
+        // Handle for dragging
+        Center(
           child: Container(
+            margin: EdgeInsets.symmetric(vertical: 12.0 * scaleFactor),
+            width: 40 * scaleFactor,
+            height: 5 * scaleFactor,
             decoration: BoxDecoration(
-              color: AppColors.cardBg,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(25),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 15,
-                  spreadRadius: 5,
-                ),
-              ],
+              color: AppColors.greyText.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            controller: scrollController,
+            padding: EdgeInsets.symmetric(
+              horizontal: 20 * scaleFactor,
+              vertical: 10 * scaleFactor,
             ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Handle for dragging
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12.0),
-                  child: Container(
-                    width: 40,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: AppColors.greyText.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                Text(
+                  'Detail Pesanan #${widget.orderId.substring(0, 8)}',
+                  style: TextStyle(
+                    fontSize: 20 * scaleFactor,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.darkGrey,
                   ),
                 ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Detail Pesanan #${widget.orderId.substring(0, 8)}',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.darkGrey,
-                          ),
-                        ),
-                        const SizedBox(height: 15),
+                SizedBox(height: 15 * scaleFactor),
 
-                        // Partner Info
-                        _buildInfoRow(
-                          icon: Icons.store,
-                          label: 'Penjual',
-                          value:
-                              _orderData?['mitraname'] ??
-                              'N/A', // This assumes 'partnerName' is available directly in _orderData
-                          color: AppColors.primaryOrange,
-                        ),
-                        _buildInfoRow(
-                          icon: Icons.location_on,
-                          label: 'Alamat Pengiriman',
-                          value:
-                              _orderData?['destination']?['address'] ??
-                              'N/A', // Corrected to 'destination' for delivery address
-                          color: AppColors.gojekGreen,
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        // Driver Info (Conditional)
-                        if (!_isLoadingOrderDetails) // Only show if order details are loaded
-                          _buildDriverInfoSection(),
-
-                        const SizedBox(height: 20),
-
-                        // Order Summary
-                        Text(
-                          'Ringkasan Belanja',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.darkGrey,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        _buildOrderItemsList(),
-                        const Divider(height: 25, color: AppColors.lightOrange),
-                        _buildPriceRow(
-                          'Harga Makanan',
-                          _calculateFoodPrice(), // Call a method to calculate food price
-                        ),
-                        _buildPriceRow(
-                          'Biaya Pengiriman',
-                          _deliveryFee, // Use the _deliveryFee variable
-                        ),
-                        const Divider(height: 25, color: AppColors.lightOrange),
-                        _buildPriceRow(
-                          'Total Pembayaran',
-                          _totalAmount,
-                          isGrandTotal: true,
-                        ),
-                        const SizedBox(height: 30),
-                        _buildActionButtons(),
-                      ],
-                    ),
+                // Partner Info Card
+                _buildInfoCard(
+                  title: 'Informasi Penjual',
+                  icon: Icons.store,
+                  color: AppColors.primaryOrange,
+                  scaleFactor: scaleFactor,
+                  content: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildInfoRowContent(
+                        Icons.shop,
+                        'Nama Penjual',
+                        _orderData?['mitraname'] ?? 'N/A',
+                        scaleFactor,
+                      ),
+                      _buildInfoRowContent(
+                        Icons.location_on,
+                        'Alamat Penjual',
+                        _orderData?['pickup']?['address'] ?? 'N/A',
+                        scaleFactor,
+                      ),
+                    ],
                   ),
                 ),
+                SizedBox(height: 20 * scaleFactor),
+
+                // Customer Delivery Info Card
+                _buildInfoCard(
+                  title: 'Informasi Pengiriman',
+                  icon: Icons.home,
+                  color: AppColors.infoBlue,
+                  scaleFactor: scaleFactor,
+                  content: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildInfoRowContent(
+                        Icons.person,
+                        'Nama Penerima',
+                        _orderData?['username'] ?? 'N/A', // Assuming username is directly available
+                        scaleFactor,
+                      ),
+                      _buildInfoRowContent(
+                        Icons.location_on,
+                        'Alamat Tujuan',
+                        _orderData?['destination']?['address'] ?? 'N/A',
+                        scaleFactor,
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 20 * scaleFactor),
+
+                // Driver Info Section (Conditional and in a card)
+                _buildDriverInfoSection(scaleFactor),
+
+                SizedBox(height: 20 * scaleFactor),
+
+                // Order Summary Card
+                _buildInfoCard(
+                  title: 'Ringkasan Belanja',
+                  icon: Icons.receipt,
+                  color: AppColors.primaryOrange,
+                  scaleFactor: scaleFactor,
+                  content: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildOrderItemsList(scaleFactor),
+                      Divider(height: 25 * scaleFactor, color: AppColors.lightOrange),
+                      _buildPriceRow(
+                        'Harga Makanan',
+                        _calculateFoodPrice(),
+                        scaleFactor: scaleFactor,
+                      ),
+                      _buildPriceRow(
+                        'Biaya Pengiriman',
+                        _deliveryFee,
+                        scaleFactor: scaleFactor,
+                      ),
+                      Divider(height: 25 * scaleFactor, color: AppColors.lightOrange),
+                      _buildPriceRow(
+                        'Total Pembayaran',
+                        _totalAmount,
+                        isGrandTotal: true,
+                        scaleFactor: scaleFactor,
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 30 * scaleFactor),
+                _buildActionButtons(scaleFactor),
+                SizedBox(height: 30 * scaleFactor), // Extra space for bottom button
               ],
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildInfoCard({
+    required String title,
+    required IconData icon,
+    required Widget content,
+    required Color color,
+    required double scaleFactor,
+  }) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: EdgeInsets.all(16 * scaleFactor),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color, size: 22 * scaleFactor),
+                SizedBox(width: 10 * scaleFactor),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18 * scaleFactor,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.darkGrey,
+                  ),
+                ),
+              ],
+            ),
+            Divider(height: 24 * scaleFactor),
+            content,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRowContent(IconData icon, String label, String value, double scaleFactor) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4.0 * scaleFactor),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.greyText, size: 18 * scaleFactor),
+          SizedBox(width: 8 * scaleFactor),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12 * scaleFactor,
+                    color: AppColors.greyText,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 14 * scaleFactor,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.darkGrey,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -827,157 +958,186 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
     return foodPrice;
   }
 
-  Widget _buildInfoRow({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.greyText,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              SizedBox(
-                width: MediaQuery.of(context).size.width * 0.75,
-                child: Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.darkGrey,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDriverInfoSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Informasi Driver',
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppColors.darkGrey,
-          ),
-        ),
-        const SizedBox(height: 10),
-        _isDriverFound && _driverName != null
-            ? Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: AppColors.accentBlue.withOpacity(0.2),
-                  radius: 25,
-                  child: Icon(
-                    Icons.person,
-                    color: AppColors.accentBlue,
-                    size: 30,
-                  ),
-                ),
-                const SizedBox(width: 15),
-                Column(
+  Widget _buildDriverInfoSection(double scaleFactor) {
+    return _buildInfoCard(
+      title: 'Informasi Driver',
+      icon: Icons.person_pin,
+      color: AppColors.gojekGreen,
+      scaleFactor: scaleFactor,
+      content: _isLoadingOrderDetails
+          ? _buildPlaceholderDriverInfo(scaleFactor)
+          : (_isDriverFound && _driverName != null
+              ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _driverName!,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.darkGrey,
-                      ),
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: AppColors.gojekGreen.withOpacity(0.2),
+                          radius: 25 * scaleFactor,
+                          child: Icon(
+                            Icons.person,
+                            color: AppColors.gojekGreen,
+                            size: 30 * scaleFactor,
+                          ),
+                        ),
+                        SizedBox(width: 15 * scaleFactor),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _driverName!,
+                              style: TextStyle(
+                                fontSize: 16 * scaleFactor,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.darkGrey,
+                              ),
+                            ),
+                            Text(
+                              'Driver LhokRide+',
+                              style: TextStyle(
+                                fontSize: 13 * scaleFactor,
+                                color: AppColors.greyText,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
+                    SizedBox(height: 15 * scaleFactor),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _makePhoneCall(_driverPhone!),
+                            icon: Icon(Icons.call, size: 18 * scaleFactor),
+                            label: Text(
+                              'Telepon',
+                              style: TextStyle(fontSize: 13 * scaleFactor),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.gojekGreen,
+                              side: const BorderSide(color: AppColors.gojekGreen),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: EdgeInsets.symmetric(vertical: 10 * scaleFactor),
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 10 * scaleFactor),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _sendWhatsAppMessage(_driverPhone!),
+                            icon: Icon(Icons.chat, size: 18 * scaleFactor),
+                            label: Text(
+                              'Chat',
+                              style: TextStyle(fontSize: 13 * scaleFactor),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.accentBlue,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: EdgeInsets.symmetric(vertical: 10 * scaleFactor),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SpinKitThreeBounce(color: AppColors.gojekGreen, size: 20 * scaleFactor),
+                    SizedBox(width: 10 * scaleFactor),
                     Text(
-                      'Driver LhokRide+',
-                      style: const TextStyle(
-                        fontSize: 13,
+                      'Menunggu Driver...',
+                      style: TextStyle(
+                        fontStyle: FontStyle.italic,
                         color: AppColors.greyText,
+                        fontSize: 14 * scaleFactor,
                       ),
                     ),
                   ],
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(
-                    Icons.phone,
-                    color: AppColors.gojekGreen,
-                    size: 28,
-                  ),
-                  onPressed: () => _makePhoneCall(_driverPhone!),
-                  tooltip: 'Hubungi Driver',
-                ),
-                IconButton(
-                  icon: Icon(Icons.chat, color: AppColors.gojekGreen, size: 28),
-                  onPressed: () => _sendWhatsAppMessage(_driverPhone!),
-                  tooltip: 'Chat Driver',
-                ),
-              ],
-            )
-            : Row(
+                )),
+    );
+  }
+
+  Widget _buildPlaceholderDriverInfo(double scaleFactor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: AppColors.greyText.withOpacity(0.1),
+              radius: 25 * scaleFactor,
+            ),
+            SizedBox(width: 15 * scaleFactor),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SpinKitThreeBounce(color: AppColors.gojekGreen, size: 20.0),
-                SizedBox(width: 10),
-                Text(
-                  'Menunggu Driver...',
-                  style: TextStyle(
-                    fontStyle: FontStyle.italic,
-                    color: AppColors.greyText,
-                  ),
-                ),
+                _buildPlaceholder(width: 120 * scaleFactor, height: 16 * scaleFactor),
+                SizedBox(height: 5 * scaleFactor),
+                _buildPlaceholder(width: 80 * scaleFactor, height: 14 * scaleFactor),
               ],
             ),
-        const SizedBox(height: 20),
+          ],
+        ),
+        SizedBox(height: 15 * scaleFactor),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildPlaceholder(width: 100 * scaleFactor, height: 40 * scaleFactor, borderRadius: 8),
+            SizedBox(width: 10 * scaleFactor),
+            _buildPlaceholder(width: 100 * scaleFactor, height: 40 * scaleFactor, borderRadius: 8),
+          ],
+        ),
       ],
     );
   }
 
-  Widget _buildOrderItemsList() {
+  Widget _buildPlaceholder({double? width, double? height, double borderRadius = 4.0}) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: AppColors.lightOrange.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(borderRadius),
+      ),
+    );
+  }
+
+
+  Widget _buildOrderItemsList(double scaleFactor) {
     if (_orderItems.isEmpty) {
-      return const Text('Tidak ada item pesanan.');
+      return Text('Tidak ada item pesanan.', style: TextStyle(fontSize: 14 * scaleFactor, color: AppColors.greyText));
     }
     return Column(
       children:
           _orderItems.map<Widget>((item) {
             return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5.0),
+              padding: EdgeInsets.symmetric(vertical: 5.0 * scaleFactor),
               child: Row(
                 children: [
                   Text(
                     '${item['qty']}x',
-                    style: const TextStyle(
-                      fontSize: 14,
+                    style: TextStyle(
+                      fontSize: 14 * scaleFactor,
                       fontWeight: FontWeight.bold,
                       color: AppColors.darkGrey,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: 10 * scaleFactor),
                   Expanded(
                     child: Text(
                       item['name'],
-                      style: const TextStyle(
-                        fontSize: 14,
+                      style: TextStyle(
+                        fontSize: 14 * scaleFactor,
                         color: AppColors.darkGrey,
                       ),
                     ),
@@ -987,8 +1147,8 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
                       (item['price'] as num? ?? 0).toDouble() *
                           (item['qty'] as num? ?? 0).toDouble(),
                     ),
-                    style: const TextStyle(
-                      fontSize: 14,
+                    style: TextStyle(
+                      fontSize: 14 * scaleFactor,
                       color: AppColors.darkGrey,
                     ),
                   ),
@@ -1003,16 +1163,17 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
     String label,
     double amount, {
     bool isGrandTotal = false,
+    required double scaleFactor,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      padding: EdgeInsets.symmetric(vertical: 4.0 * scaleFactor),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             label,
             style: TextStyle(
-              fontSize: isGrandTotal ? 16 : 14,
+              fontSize: isGrandTotal ? 16 * scaleFactor : 14 * scaleFactor,
               fontWeight: isGrandTotal ? FontWeight.bold : FontWeight.normal,
               color: isGrandTotal ? AppColors.darkGrey : AppColors.greyText,
             ),
@@ -1020,7 +1181,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
           Text(
             _formatCurrency(amount),
             style: TextStyle(
-              fontSize: isGrandTotal ? 16 : 14,
+              fontSize: isGrandTotal ? 16 * scaleFactor : 14 * scaleFactor,
               fontWeight: isGrandTotal ? FontWeight.bold : FontWeight.normal,
               color: isGrandTotal ? AppColors.darkGrey : AppColors.greyText,
             ),
@@ -1030,7 +1191,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
     );
   }
 
-  Widget _buildActionButtons() {
+  Widget _buildActionButtons(double scaleFactor) {
     List<Widget> buttons = [];
 
     if (_currentOrderStatus != _OrderStatus.delivered &&
@@ -1040,12 +1201,12 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
           Expanded(
             child: ElevatedButton.icon(
               onPressed: () => _makePhoneCall(_driverPhone!),
-              icon: const Icon(Icons.phone),
-              label: const Text('Telepon Driver'),
+              icon: Icon(Icons.phone, size: 18 * scaleFactor),
+              label: Text('Telepon Driver', style: TextStyle(fontSize: 13 * scaleFactor)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.gojekGreen,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: EdgeInsets.symmetric(vertical: 12 * scaleFactor),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -1053,17 +1214,17 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
             ),
           ),
         );
-        buttons.add(const SizedBox(width: 10));
+        buttons.add(SizedBox(width: 10 * scaleFactor));
         buttons.add(
           Expanded(
             child: ElevatedButton.icon(
               onPressed: () => _sendWhatsAppMessage(_driverPhone!),
-              icon: const Icon(Icons.chat),
-              label: const Text('Chat Driver'),
+              icon: Icon(Icons.chat, size: 18 * scaleFactor),
+              label: Text('Chat Driver', style: TextStyle(fontSize: 13 * scaleFactor)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.gojekGreen,
+                backgroundColor: AppColors.accentBlue,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: EdgeInsets.symmetric(vertical: 12 * scaleFactor),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -1089,12 +1250,12 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
                   ),
                 );
               },
-              icon: const Icon(Icons.cancel, color: Colors.red),
-              label: const Text('Batalkan Pesanan'),
+              icon: Icon(Icons.cancel, color: Colors.red, size: 18 * scaleFactor),
+              label: Text('Batalkan Pesanan', style: TextStyle(fontSize: 13 * scaleFactor)),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.red,
                 side: const BorderSide(color: Colors.red),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: EdgeInsets.symmetric(vertical: 12 * scaleFactor),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -1110,12 +1271,12 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
             onPressed: () {
               context.go('/'); // Or navigate to order history
             },
-            icon: const Icon(Icons.thumb_up),
-            label: const Text('Selesai'),
+            icon: Icon(Icons.thumb_up, size: 18 * scaleFactor),
+            label: Text('Selesai', style: TextStyle(fontSize: 13 * scaleFactor)),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primaryOrange,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: EdgeInsets.symmetric(vertical: 12 * scaleFactor),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -1130,12 +1291,12 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
             onPressed: () {
               context.go('/home'); // Or navigate to order history
             },
-            icon: const Icon(Icons.home),
-            label: const Text('Kembali ke Beranda'),
+            icon: Icon(Icons.home, size: 18 * scaleFactor),
+            label: Text('Kembali ke Beranda', style: TextStyle(fontSize: 13 * scaleFactor)),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.greyText,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: EdgeInsets.symmetric(vertical: 12 * scaleFactor),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -1153,7 +1314,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
     _mapDebounceTimer?.cancel();
     _disposeListeners(); // Centralized listener disposal
     _stopTimers(); // Centralized timer disposal
-    _panelAnimationController.dispose();
+    // _panelAnimationController.dispose(); // No longer needed
     _fabAnimationController.dispose();
     _driverMarkerAnimationController.dispose();
     _radarAnimationController.dispose(); // Dispose radar animation controller
@@ -1162,208 +1323,238 @@ class _OrderTrackingPageState extends State<OrderTrackingPage>
 
   @override
   Widget build(BuildContext context) {
+    double screenWidth = MediaQuery.of(context).size.width;
+    double scaleFactor = screenWidth / 375.0; // Base width for scaling
+
     return Scaffold(
       extendBodyBehindAppBar: true, // Allows content to go behind app bar
       appBar: AppBar(
         backgroundColor: Colors.transparent, // Make app bar transparent
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.darkGrey),
+          icon: Icon(Icons.arrow_back, color: AppColors.darkGrey, size: 24 * scaleFactor),
           onPressed: () {
             context.pop();
           },
         ),
-        title: const Text(
+        title: Text(
           'Lacak Pesanan Anda',
           style: TextStyle(
             color: AppColors.darkGrey,
             fontWeight: FontWeight.bold,
+            fontSize: 18 * scaleFactor,
           ),
         ),
         centerTitle: true,
       ),
-      body: Stack(
-        children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              center:
-                  _partnerLocation ??
-                  LatLng(5.1787, 96.8833), // Default Lhokseumawe
-              zoom: 13.0,
-              minZoom: 10.0,
-              maxZoom: 18.0,
-              interactiveFlags:
-                  InteractiveFlag.drag | InteractiveFlag.pinchZoom,
-              onMapEvent: (event) {
-                if (event is MapEventMoveEnd) {
-                  _onMapMoved(event.camera);
-                }
-              },
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.app',
+      body: SlidingUpPanel(
+        controller: _panelController,
+        minHeight: MediaQuery.of(context).size.height * 0.30, // Adjusted min height for more info
+        maxHeight: MediaQuery.of(context).size.height * 0.85, // Allow more space for details
+        parallaxEnabled: true,
+        parallaxOffset: 0.5,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(25),
+          topRight: Radius.circular(25),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 15,
+            spreadRadius: 5,
+          ),
+        ],
+        panelBuilder: (scrollController) => _buildPanelContent(scrollController, scaleFactor),
+        body: Stack(
+          children: [
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter:
+                    _partnerLocation ??
+                    const LatLng(5.1787, 96.8833), // Default Lhokseumawe
+                initialZoom: 13.0,
+                maxZoom: 18.0,
+                minZoom: 10.0,
+                interactiveFlags:
+                    InteractiveFlag.drag | InteractiveFlag.pinchZoom,
+                onMapEvent: (event) {
+                  if (event is MapEventMoveEnd) {
+                    _onMapMoved(event.camera);
+                  }
+                },
               ),
-              PolylineLayer(
-                polylines: [
-                  if (_deliveryRoutePoints.isNotEmpty)
-                    Polyline(
-                      points: _deliveryRoutePoints,
-                      strokeWidth: 5.0,
-                      color: AppColors.gojekGreen,
-                    ),
-                ],
-              ),
-              MarkerLayer(
-                markers: [
-                  // Partner Marker (Restaurant)
-                  if (_partnerLocation != null)
-                    Marker(
-                      point: _partnerLocation!,
-                      width: 60,
-                      height: 60,
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.storefront,
-                            color: AppColors.primaryOrange,
-                            size: 35,
-                          ),
-                          Text(
-                            'Toko',
-                            style: TextStyle(
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.app',
+                  retinaMode: RetinaMode.isHighDensity(context),
+                ),
+                PolylineLayer(
+                  polylines: [
+                    if (_deliveryRoutePoints.isNotEmpty)
+                      Polyline(
+                        points: _deliveryRoutePoints,
+                        strokeWidth: 5.0,
+                        color: AppColors.gojekGreen,
+                      ),
+                  ],
+                ),
+                MarkerLayer(
+                  markers: [
+                    // Partner Marker (Restaurant)
+                    if (_partnerLocation != null)
+                      Marker(
+                        point: _partnerLocation!,
+                        width: 60 * scaleFactor,
+                        height: 60 * scaleFactor,
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.storefront,
                               color: AppColors.primaryOrange,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 10,
+                              size: 35 * scaleFactor,
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  // Driver Marker (Conditional)
-                  if (_driverLocation != null &&
-                      _isDriverFound &&
-                      (_currentOrderStatus == _OrderStatus.toRestaurant ||
-                          _currentOrderStatus ==
-                              _OrderStatus.arrivedAtRestaurant ||
-                          _currentOrderStatus == _OrderStatus.pickedUp ||
-                          _currentOrderStatus ==
-                              _OrderStatus.onTheWayToDestination ||
-                          _currentOrderStatus ==
-                              _OrderStatus
-                                  .accepted)) // Show driver if accepted too
-                    Marker(
-                      point: _driverLocation!,
-                      width: 60,
-                      height: 60,
-                      child: AnimatedBuilder(
-                        animation: _driverMarkerAnimationController,
-                        builder: (context, child) {
-                          return Transform.rotate(
-                            angle: _driverMarkerAnimation.value,
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.directions_bike,
-                                  color: AppColors.gojekGreen,
-                                  size: 35,
-                                ),
-                                Text(
-                                  'Driver',
-                                  style: TextStyle(
-                                    color: AppColors.gojekGreen,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    )
-                  else if (_partnerLocation != null &&
-                      !_isDriverFound) // Show radar animation when no driver found, centered at partner
-                    Marker(
-                      point: _partnerLocation!,
-                      width: 100,
-                      height: 100,
-                      child: AnimatedBuilder(
-                        animation: _radarAnimationController,
-                        builder: (context, child) {
-                          return Opacity(
-                            opacity: 1.0 - _radarAnimation.value,
-                            child: CustomPaint(
-                              painter: RadarPainter(_radarAnimation.value),
-                              child: Center(
-                                child: Icon(
-                                  Icons.person_search,
-                                  color: AppColors.gojekGreen.withOpacity(0.8),
-                                  size: 35,
-                                ),
+                            Text(
+                              'Toko',
+                              style: TextStyle(
+                                color: AppColors.primaryOrange,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10 * scaleFactor,
                               ),
                             ),
-                          );
-                        },
+                          ],
+                        ),
                       ),
-                    ),
 
-                  // User Delivery Location Marker
-                  if (_userDeliveryLocation != null)
-                    Marker(
-                      point: _userDeliveryLocation!,
-                      width: 60,
-                      height: 60,
-                      child: Column(
-                        children: [
-                          Icon(Icons.home, color: AppColors.infoBlue, size: 35),
-                          Text(
-                            'Anda',
-                            style: TextStyle(
-                              color: AppColors.infoBlue,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 10,
+                    // Driver Marker (Conditional)
+                    if (_driverLocation != null &&
+                        _isDriverFound &&
+                        (_currentOrderStatus == _OrderStatus.toRestaurant ||
+                            _currentOrderStatus ==
+                                _OrderStatus.arrivedAtRestaurant ||
+                            _currentOrderStatus == _OrderStatus.pickedUp ||
+                            _currentOrderStatus ==
+                                _OrderStatus.onTheWayToDestination ||
+                            _currentOrderStatus ==
+                                _OrderStatus
+                                    .accepted)) // Show driver if accepted too
+                      Marker(
+                        point: _driverLocation!,
+                        width: 60 * scaleFactor,
+                        height: 60 * scaleFactor,
+                        child: AnimatedBuilder(
+                          animation: _driverMarkerAnimationController,
+                          builder: (context, child) {
+                            return Transform.rotate(
+                              angle: _driverMarkerAnimation.value,
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.directions_bike,
+                                    color: AppColors.gojekGreen,
+                                    size: 35 * scaleFactor,
+                                  ),
+                                  Text(
+                                    'Driver',
+                                    style: TextStyle(
+                                      color: AppColors.gojekGreen,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 10 * scaleFactor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                    else if (_partnerLocation != null &&
+                        !_isDriverFound) // Show radar animation when no driver found, centered at partner
+                      Marker(
+                        point: _partnerLocation!,
+                        width: 100 * scaleFactor,
+                        height: 100 * scaleFactor,
+                        child: AnimatedBuilder(
+                          animation: _radarAnimationController,
+                          builder: (context, child) {
+                            return Opacity(
+                              opacity: 1.0 - _radarAnimation.value,
+                              child: CustomPaint(
+                                painter: RadarPainter(_radarAnimation.value),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.person_search,
+                                    color: AppColors.gojekGreen.withOpacity(0.8),
+                                    size: 35 * scaleFactor,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
+                    // User Delivery Location Marker
+                    if (_userDeliveryLocation != null)
+                      Marker(
+                        point: _userDeliveryLocation!,
+                        width: 60 * scaleFactor,
+                        height: 60 * scaleFactor,
+                        child: Column(
+                          children: [
+                            Icon(Icons.home, color: AppColors.infoBlue, size: 35 * scaleFactor),
+                            Text(
+                              'Anda',
+                              style: TextStyle(
+                                color: AppColors.infoBlue,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10 * scaleFactor,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                ],
-              ),
-            ],
-          ),
+                  ],
+                ),
+              ],
+            ),
 
-          // Status Header
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(child: _buildStatusHeader()),
-          ),
+            // Status Header
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(child: _buildStatusHeader(scaleFactor)),
+            ),
 
-          // Sliding Panel
-          _buildSlidingPanel(),
-
-          // Floating Action Button to toggle panel
-          Positioned(
-            bottom: 24,
-            right: 24,
-            child: ScaleTransition(
-              scale: _fabAnimation,
-              child: FloatingActionButton(
-                onPressed: _togglePanel,
-                backgroundColor: AppColors.primaryOrange,
-                child: Icon(
-                  _isPanelExpanded ? Icons.close : Icons.info_outline,
-                  color: Colors.white,
+            // Floating Action Button to toggle panel - remains for convenience, but SlidingUpPanel handles primary interaction
+            Positioned(
+              bottom: (MediaQuery.of(context).size.height * 0.30) + (16 * scaleFactor), // Adjust based on minHeight of panel
+              right: 24 * scaleFactor,
+              child: ScaleTransition(
+                scale: _fabAnimation,
+                child: FloatingActionButton(
+                  onPressed: () {
+                    if (_panelController.isPanelOpen) {
+                      _panelController.close();
+                      _fabAnimationController.reverse();
+                    } else {
+                      _panelController.open();
+                      _fabAnimationController.forward();
+                    }
+                  },
+                  backgroundColor: AppColors.primaryOrange,
+                  child: Icon(
+                    _panelController.isPanelOpen ? Icons.close : Icons.info_outline,
+                    color: Colors.white,
+                    size: 24 * scaleFactor,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

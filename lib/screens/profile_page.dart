@@ -31,7 +31,7 @@ class _ProfilePageState extends State<ProfilePage>
   String? _userName;
   String? _userPhone;
   String? _userPhoto;
-  double? _userBalance;
+  String? _userBalance;
 
   final formatter = NumberFormat.currency(
     locale: 'id_ID',
@@ -84,25 +84,46 @@ class _ProfilePageState extends State<ProfilePage>
     }
   }
 
-  // New: Simulate fetching wallet balance
+
   Future<void> _fetchWalletBalance() async {
-    setState(() {
-      _isLoading = true; // Indicate loading for balance
-    });
     try {
-      final storedBalance = await _storage.read(key: 'saldo');
-      setState(() {
-        _userBalance = double.tryParse(storedBalance ?? '0.0') ?? 0.0;
-      });
+      final token = await _storage.read(key: 'token');
+        final String _apiBaseUrl = 'https://api.lhokride.com';
+      if (token != null && token.isNotEmpty) {
+        final response = await http.get(
+          Uri.parse('$_apiBaseUrl/api/auth/profile'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final saldo = data['user']['saldo']?.toString() ?? '0';
+          await _storage.write(key: 'saldo', value: saldo);
+
+          final parsedBalance = int.tryParse(saldo) ?? 0;
+          final formattedBalance = NumberFormat.currency(
+            locale: 'id_ID',
+            symbol: 'Rp ',
+            decimalDigits: 0,
+          ).format(parsedBalance);
+
+          if (mounted) {
+            setState(() => _userBalance = formattedBalance);
+          }
+        }
+      }
     } catch (e) {
-      _showErrorSnackBar('Error fetching wallet balance: ${e.toString()}');
-      print('Error fetching wallet balance: $e'); // For debugging
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      debugPrint('Error fetching balance: $e');
+      if (mounted) {
+        setState(() => _userBalance = 'Rp 0');
+      }
     }
   }
+
 
   Future<void> _pickImage() async {
     try {

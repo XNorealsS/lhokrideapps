@@ -53,16 +53,20 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
   double _currentHeading = 0.0;
   List<LatLng> _routePoints = [];
   bool _isLoadingRoute = true;
+  bool _isInitialLoading = true; // To show placeholders on initial load
 
   // --- Order & Driver State ---
   String _currentDeliveryStatus = "to_restaurant";
   String? _driverId;
+  // Placeholder for estimated time - this would typically come from a route calculation service
+  String _estimatedTime = "Menghitung...";
 
   // --- UI Constants ---
   static const Color _primaryOrangeColor = Color(0xFFFF6B35);
   static const Color _greenColor = Color(0xFF4CAF50);
   static const Color _blueColor = Color(0xFF2196F3);
   static const Color _textColor = Color(0xFF333333);
+  static const Color _lightGreyColor = Color(0xFFE0E0E0); // For placeholders
 
   @override
   void initState() {
@@ -88,6 +92,7 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
   }
 
   Future<void> _loadDriverAndInitialize() async {
+    setState(() => _isInitialLoading = true); // Start initial loading
     _driverId = await _storage.read(key: 'driver_id');
     if (_driverId == null) {
       print("Error: Driver ID not found in storage.");
@@ -95,11 +100,13 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
         "Gagal memuat ID driver, silakan coba lagi.",
         isError: true,
       );
+      if (mounted) setState(() => _isInitialLoading = false);
       return;
     }
     await _fetchCurrentOrderStatus();
     await _initializeLocationAndMap();
     _startRouteUpdateTimer();
+    if (mounted) setState(() => _isInitialLoading = false); // End initial loading
   }
 
   Future<void> _fetchCurrentOrderStatus() async {
@@ -136,7 +143,6 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
       return;
     }
 
-    // Get initial position to avoid waiting for the stream
     try {
       Position initialPosition = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -154,9 +160,9 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
       }
     } catch (e) {
       print("Error getting initial position: $e");
+      _showSnackBar('Gagal mendapatkan lokasi awal: ${e.toString()}', isError: true);
     }
 
-    // Listen for continuous location updates
     _positionStreamSubscription = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
@@ -166,7 +172,7 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
       if (mounted) {
         setState(() {
           _currentLocation = LatLng(position.latitude, position.longitude);
-          _currentHeading = position.heading; // Heading in degrees
+          _currentHeading = position.heading;
           _mapController.move(_currentLocation!, _mapController.zoom);
         });
 
@@ -180,7 +186,7 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
   void _startRouteUpdateTimer() {
     _routeUpdateTimer?.cancel();
     _routeUpdateTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
-      if (mounted) _fetchAndSetRoute(); // Fetch route periodically
+      if (mounted) _fetchAndSetRoute();
     });
   }
 
@@ -217,6 +223,7 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
         setState(() {
           _routePoints = [];
           _isLoadingRoute = false;
+          _estimatedTime = "Tidak ada rute";
         });
       return;
     }
@@ -226,11 +233,21 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
       if (mounted) {
         setState(() {
           _routePoints = route['routePoints'] ?? [];
+          // Assuming route['duration'] gives duration in seconds
+          final durationInMinutes = (route['duration'] ?? 0) ~/ 60;
+          if (durationInMinutes > 0) {
+            _estimatedTime = "$durationInMinutes menit";
+          } else if ((route['duration'] ?? 0) > 0) {
+            _estimatedTime = "<1 menit";
+          } else {
+            _estimatedTime = "Tersedia";
+          }
         });
       }
     } catch (e) {
       print('Error fetching route: $e');
       if (mounted) _showSnackBar('Gagal memperbarui rute.', isError: true);
+      if (mounted) setState(() => _estimatedTime = "Error");
     } finally {
       if (mounted) setState(() => _isLoadingRoute = false);
     }
@@ -261,12 +278,11 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
 
         if (status == "delivered") {
           _showSnackBar('Pesanan berhasil diantar!', isError: false);
-          // Pop after a short delay to allow user to see the snackbar
           Future.delayed(const Duration(seconds: 2), () {
             if (mounted) Navigator.of(context).pop();
           });
         } else {
-          _fetchAndSetRoute(); // Recalculate route for the next stage
+          _fetchAndSetRoute();
         }
       }
     } catch (e) {
@@ -316,7 +332,6 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
     if (await canLaunchUrl(googleMapsUri)) {
       await launchUrl(googleMapsUri);
     } else {
-      // Fallback to a web-based Google Maps URL
       final String webUrl =
           'https://www.google.com/maps/dir/?api=1&destination=${destination.latitude},${destination.longitude}&travelmode=driving';
       final Uri webUri = Uri.parse(webUrl);
@@ -358,10 +373,9 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
     return Scaffold(
       body: SlidingUpPanel(
         controller: _panelController,
-        minHeight:
-            MediaQuery.of(context).size.height * 0.25, // Responsive height
-        maxHeight:
-            MediaQuery.of(context).size.height * 0.75, // Responsive height
+        minHeight: MediaQuery.of(context).size.height *
+            0.28, // Adjusted for slightly more info
+        maxHeight: MediaQuery.of(context).size.height * 0.8, // Allow more space
         parallaxEnabled: true,
         parallaxOffset: 0.5,
         borderRadius: const BorderRadius.only(
@@ -395,7 +409,7 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
               userAgentPackageName: 'com.becak.lhokride',
               retinaMode: RetinaMode.isHighDensity(context),
             ),
-            if (_routePoints.isNotEmpty)
+            if (_routePoints.isNotEmpty && !_isLoadingRoute)
               PolylineLayer(
                 polylines: [
                   Polyline(
@@ -406,6 +420,11 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
                     borderStrokeWidth: 2.5,
                   ),
                 ],
+              )
+            else if (_isLoadingRoute)
+              // Placeholder for route loading
+              const Center(
+                child: CircularProgressIndicator(color: _primaryOrangeColor),
               ),
             MarkerLayer(markers: _buildMarkers()),
           ],
@@ -422,6 +441,8 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
                 backgroundColor: Colors.white,
                 foregroundColor: _textColor,
                 mini: true,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 4,
                 child: const Icon(Icons.my_location, size: 22),
               ),
               const SizedBox(height: 8),
@@ -431,6 +452,8 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
                 backgroundColor: _blueColor,
                 foregroundColor: Colors.white,
                 mini: true,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 4,
                 child: const Icon(Icons.navigation, size: 22),
               ),
             ],
@@ -473,7 +496,7 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
           widget.restaurantLocation['longitude'],
         ),
         icon: Icons.restaurant,
-        color: _blueColor,
+        color: _blueColor, // Use blue for restaurant for distinction
       ),
     );
 
@@ -485,7 +508,7 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
           widget.userDestination['longitude'],
         ),
         icon: Icons.location_on,
-        color: _greenColor,
+        color: _greenColor, // Use green for user destination
       ),
     );
 
@@ -521,13 +544,10 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
   }
 
   Widget _buildSlidingPanelContent(ScrollController scrollController) {
-    // Responsive sizing helper
     double screenWidth = MediaQuery.of(context).size.width;
-    double scaleFactor = screenWidth / 375.0; // Base width for scaling
+    double scaleFactor = screenWidth / 375.0;
 
-    return ListView(
-      controller: scrollController,
-      padding: EdgeInsets.zero,
+    return Column(
       children: [
         // Panel grabber
         Center(
@@ -541,33 +561,54 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
             ),
           ),
         ),
-
-        // Status and Action Button
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Column(
+        Expanded(
+          child: ListView(
+            controller: scrollController,
+            padding: EdgeInsets.zero,
             children: [
-              _buildStatusHeader(scaleFactor),
-              const SizedBox(height: 16),
-              _buildActionButton(scaleFactor),
-            ],
-          ),
-        ),
+              // Status and Action Button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Column(
+                  children: [
+                    _buildStatusHeader(scaleFactor),
+                    const SizedBox(height: 16),
+                    _buildActionButton(scaleFactor),
+                  ],
+                ),
+              ),
 
-        const Divider(height: 32, thickness: 1, indent: 16, endIndent: 16),
+              const Divider(height: 32, thickness: 1, indent: 16, endIndent: 16),
 
-        // Collapsible Details
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildOrderDetails(scaleFactor),
-              const SizedBox(height: 16),
-              _buildCustomerInfo(scaleFactor),
-              const SizedBox(height: 16),
-              _buildRestaurantInfo(scaleFactor),
-              const SizedBox(height: 20),
+              // Estimated Time and Distance (Gojek-like element)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: _buildEstimatedTimeAndDistance(scaleFactor),
+              ),
+
+              const Divider(height: 32, thickness: 1, indent: 16, endIndent: 16),
+
+              // Collapsible Details
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _isInitialLoading
+                        ? _buildPlaceholderCard(scaleFactor, "Detail Pesanan")
+                        : _buildOrderDetails(scaleFactor),
+                    const SizedBox(height: 16),
+                    _isInitialLoading
+                        ? _buildPlaceholderCard(scaleFactor, "Info Pelanggan")
+                        : _buildCustomerInfo(scaleFactor),
+                    const SizedBox(height: 16),
+                    _isInitialLoading
+                        ? _buildPlaceholderCard(scaleFactor, "Info Restoran")
+                        : _buildRestaurantInfo(scaleFactor),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -597,10 +638,15 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
         statusText = "Menuju Pelanggan";
         subText = "Antarkan pesanan ke lokasi tujuan";
         break;
-      case "delivered":
+      case "arrived_at_destination": // New status before 'delivered'
         icon = Icons.home_rounded;
         statusText = "Tiba di Tujuan";
-        subText = "Selesaikan pesanan dengan pelanggan";
+        subText = "Menunggu konfirmasi pelanggan";
+        break;
+      case "delivered":
+        icon = Icons.check_circle_rounded;
+        statusText = "Pesanan Selesai";
+        subText = "Pengantaran berhasil";
         break;
       default:
         icon = Icons.info_outline_rounded;
@@ -638,11 +684,69 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
     );
   }
 
+  Widget _buildEstimatedTimeAndDistance(double scaleFactor) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: [
+        Expanded(
+          child: Column(
+            children: [
+              Icon(Icons.timer_outlined, color: _primaryOrangeColor, size: 28 * scaleFactor),
+              const SizedBox(height: 4),
+              Text(
+                _estimatedTime,
+                style: TextStyle(
+                  fontSize: 16 * scaleFactor,
+                  fontWeight: FontWeight.bold,
+                  color: _textColor,
+                ),
+              ),
+              Text(
+                "Estimasi Waktu",
+                style: TextStyle(
+                  fontSize: 12 * scaleFactor,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          height: 60 * scaleFactor,
+          child: VerticalDivider(color: Colors.grey[300], thickness: 1),
+        ),
+        Expanded(
+          child: Column(
+            children: [
+              Icon(Icons.directions_car_outlined, color: _primaryOrangeColor, size: 28 * scaleFactor),
+              const SizedBox(height: 4),
+              Text(
+                _isLoadingRoute ? "..." : "Perjalanan", // Distance would be calculated with route
+                style: TextStyle(
+                  fontSize: 16 * scaleFactor,
+                  fontWeight: FontWeight.bold,
+                  color: _textColor,
+                ),
+              ),
+              Text(
+                "Jarak Tersisa",
+                style: TextStyle(
+                  fontSize: 12 * scaleFactor,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildActionButton(double scaleFactor) {
     String buttonText = "Memuat...";
     VoidCallback? onPressed;
     Color buttonColor = _primaryOrangeColor;
-    bool isLoading = false;
+    bool isLoadingAction = false; // Separate loading for button actions
 
     switch (_currentDeliveryStatus) {
       case "accepted":
@@ -653,28 +757,33 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
       case "arrived_at_restaurant":
         buttonText = "Ambil Pesanan";
         onPressed = () => _updateOrderStatus("picked_up_order");
-        buttonColor = _blueColor;
+        buttonColor = _blueColor; // Change color for picking up
         break;
       case "picked_up_order":
         buttonText = "Sudah Sampai di Tujuan";
         onPressed = () => _updateOrderStatus("arrived_at_destination");
         break;
-      case "delivered":
+      case "arrived_at_destination": // New status
         buttonText = "Selesaikan Pengantaran";
         onPressed = () => _updateOrderStatus("delivered");
-        buttonColor = _greenColor;
+        buttonColor = _greenColor; // Green for completion
+        break;
+      case "delivered":
+        buttonText = "Pengantaran Selesai";
+        onPressed = null; // Disable button after delivery
+        buttonColor = Colors.grey;
         break;
       default:
         buttonText = "Status Tidak Dikenal";
         onPressed = null;
-        isLoading = true;
+        isLoadingAction = true;
         buttonColor = Colors.grey;
     }
 
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: isLoading ? null : onPressed,
+        onPressed: (_isInitialLoading || isLoadingAction || _currentDeliveryStatus == "delivered") ? null : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: buttonColor,
           foregroundColor: Colors.white,
@@ -684,23 +793,22 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
           ),
           elevation: 4,
         ),
-        child:
-            isLoading
-                ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 3,
-                  ),
-                )
-                : Text(
-                  buttonText,
-                  style: TextStyle(
-                    fontSize: 16 * scaleFactor,
-                    fontWeight: FontWeight.bold,
-                  ),
+        child: (_isInitialLoading || isLoadingAction)
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 3,
                 ),
+              )
+            : Text(
+                buttonText,
+                style: TextStyle(
+                  fontSize: 16 * scaleFactor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
       ),
     );
   }
@@ -738,6 +846,35 @@ class _FoodDeliveryProgressScreenState extends State<FoodDeliveryProgressScreen>
             content,
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPlaceholder({double? width, double? height, double borderRadius = 4.0}) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: _lightGreyColor,
+        borderRadius: BorderRadius.circular(borderRadius),
+      ),
+    );
+  }
+
+  Widget _buildPlaceholderCard(double scaleFactor, String title) {
+    return _buildInfoCard(
+      title: title,
+      icon: Icons.hourglass_empty_rounded,
+      scaleFactor: scaleFactor,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPlaceholder(width: double.infinity, height: 16 * scaleFactor),
+          SizedBox(height: 8),
+          _buildPlaceholder(width: double.infinity, height: 16 * scaleFactor),
+          SizedBox(height: 8),
+          _buildPlaceholder(width: double.infinity, height: 16 * scaleFactor),
+        ],
       ),
     );
   }

@@ -320,26 +320,40 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Future<void> _loadXpayBalance() async {
-    // Simulate network delay for balance fetching
-    await Future.delayed(const Duration(milliseconds: 500));
     try {
-      final storedBalance = await _storage.read(key: 'saldo');
-      if (mounted) {
-        final parsedBalance = int.tryParse(storedBalance ?? '0') ?? 0;
-        final formattedBalance = NumberFormat.currency(
-          locale: 'id_ID',
-          symbol: 'Rp ',
-          decimalDigits: 0,
-        ).format(parsedBalance);
-        setState(() => _xpayBalance = formattedBalance);
-        debugPrint('XPay balance loaded: $_xpayBalance');
+      final token = await _storage.read(key: 'token');
+      final String _apiBaseUrl = 'https://api.lhokride.com';
+      if (token != null && token.isNotEmpty) {
+        final response = await http.get(
+          Uri.parse('$_apiBaseUrl/api/auth/profile'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final saldo = data['user']['saldo']?.toString() ?? '0';
+          await _storage.write(key: 'saldo', value: saldo);
+
+          final parsedBalance = int.tryParse(saldo) ?? 0;
+          final formattedBalance = NumberFormat.currency(
+            locale: 'id_ID',
+            symbol: 'Rp ',
+            decimalDigits: 0,
+          ).format(parsedBalance);
+
+          if (mounted) {
+            setState(() => _xpayBalance = formattedBalance);
+          }
+        }
       }
     } catch (e) {
-      debugPrint('Error loading XPay balance: $e');
+      debugPrint('Error fetching balance: $e');
       if (mounted) {
-        setState(() {
-          _xpayBalance = 'Rp 0'; // Default to 0 if fails
-        });
+        setState(() => _xpayBalance = 'Rp 0');
       }
     }
   }

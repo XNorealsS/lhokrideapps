@@ -343,13 +343,13 @@ class _AuthCheckerState extends State<AuthChecker>
         print("❌ Failed to fetch and update profile: ${response.body}");
         await _logout(
           navigate: false,
-        ); // Don't navigate here, let _checkAppFlowAndNavigate handle it
+        ); 
       }
     } catch (e) {
       print('❌ Error fetching and saving user profile: $e');
-      await _logout(
-        navigate: false,
-      ); // Don't navigate here, let _checkAppFlowAndNavigate handle it
+      // await _logout(
+      //   navigate: false,
+      // ); // Don't navigate here, let _checkAppFlowAndNavigate handle it
     }
 
     return false;

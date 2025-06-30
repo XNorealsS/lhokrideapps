@@ -204,22 +204,20 @@ void didChangeMetrics() {
   });
 }
 
+  // UPDATED: Adjusted panel sizes for the new UI
   double _getDefaultBottomPanelSizeForStep(RideRequestStep step) {
-    // If currently searching, don't force panel to be tiny/hidden if keyboard is closed.
-    // The main search inputs are no longer controlled by _bottomPanelSize.
-    // This method now solely dictates the ride detail panel size.
     switch (step) {
       case RideRequestStep.selectPickup:
       case RideRequestStep.selectDestination:
-        return 0.25; // Slightly larger for initial selection buttons
+        return 0.25;
       case RideRequestStep.confirmRide:
-        return 0.35; // Larger to show route info and confirm button
+        return 0.48; // Increased size for the new Gojek-style panel
       case RideRequestStep.selectPayment:
-        return 0.45; // Larger for payment options
+        return 0.45;
       case RideRequestStep.inRide:
-        return 0.35; // For ride status and driver info
+        return 0.35;
       default:
-        return 0.25; // Default for initial service selection
+        return 0.25;
     }
   }
 
@@ -260,9 +258,6 @@ void didChangeMetrics() {
         }
       }
 
-      // Check for active ride status from storage/backend if needed
-      // For fresh app start, _rideId will be null here.
-      // Persistent ride state would need more robust handling (e.g., checking active rides in backend/Firebase)
       if (_rideId != null) {
         _listenForRideUpdates();
       }
@@ -440,7 +435,6 @@ void _onDestinationFocusChanged() {
       return;
     }
 
-    // Ensure addresses are resolved before calculating route
     if (_selectedPickupAddress == "Mencari alamat..." ||
         _selectedDestinationAddress == "Mencari alamat...") {
       _showInstructionSnackbar(
@@ -569,7 +563,6 @@ void _onDestinationFocusChanged() {
               } else if (data['rideId'] != null) {
                 _rideId = data['rideId'];
               } else {
-                // Fallback if neither structure is found (shouldn't happen with current server logic)
                 print(
                   "Peringatan: rideId tidak ditemukan di respons yang diharapkan.",
                 );
@@ -578,29 +571,23 @@ void _onDestinationFocusChanged() {
 
               print('Permintaan perjalanan dikirim... $_rideId');
 
-              // Handle the 'success' flag if it's present for better UX
               if (data['success'] == false) {
                 _showInstructionSnackbar(
                   data['message'] ?? "Tidak ada driver dalam jangkauan.",
                   color: AppColors.destinationRed,
                 );
-                // You might want to prevent _listenForRideUpdates() if no drivers are found
-                // Or _listenForRideUpdates() should handle _rideId being null
-                // and potentially cancel the ride request on the server after a timeout
                 _currentStep =
-                    RideRequestStep.confirmRide; // Go back to allow re-request
+                    RideRequestStep.confirmRide; 
                 _bottomPanelSize = _getDefaultBottomPanelSizeForStep(
                   _currentStep,
                 );
               }
             });
           }
-          // Only listen for updates if a rideId was successfully obtained and it's not a 'no drivers' scenario
           if (_rideId != null &&
               (data['success'] == null || data['success'] == true)) {
             _listenForRideUpdates();
           } else if (_rideId == null) {
-            // Handle cases where no rideId was assigned
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text("Gagal mendapatkan ID perjalanan. Coba lagi."),
@@ -635,9 +622,9 @@ void _onDestinationFocusChanged() {
       return;
     }
 
-    _rideStatusListener?.cancel(); // Cancel any existing ride status listener
+    _rideStatusListener?.cancel(); 
     _driverLocationListener
-        ?.cancel(); // Ensure driver location listener is cancelled initially
+        ?.cancel();
 
     _rideStatusListener = FirebaseService.listenToRideStatus(_rideId!, (ride) {
       if (mounted) {
@@ -645,7 +632,7 @@ void _onDestinationFocusChanged() {
           final status = ride['status'] ?? "idle";
 
           if (status == 'requested')
-            return; // Ignore 'requested' as it's the initial state after request
+            return;
 
           _rideStatus = status;
           _driverId = ride['driver']?['id'];
@@ -653,9 +640,9 @@ void _onDestinationFocusChanged() {
           _driverPlateNumber = ride['driver']?['plate_number'];
           _driverVehicle = ride['driver']?['vehicle'];
           _driverTotalTrips =
-              ride['driver']?['total_trips']; // Assuming this is present
+              ride['driver']?['total_trips'];
           _driverRating =
-              (ride['driver']?['rating'] as num?)?.toDouble(); // Get rating
+              (ride['driver']?['rating'] as num?)?.toDouble();
 
           if (status == 'accepted' ||
               status == 'driver_arrived' ||
@@ -664,32 +651,30 @@ void _onDestinationFocusChanged() {
               'Perjalanan diterima oleh ${ride['driver']['name'] ?? "pengemudi"}!',
               color: AppColors.mutedGreen,
             );
-            // START LISTENING TO DRIVER LOCATION HERE
             if (_driverId != null && _driverLocationListener == null) {
               _listenToDriverLocation(_driverId!);
             }
           } else if (status == 'completed') {
             _showInstructionSnackbar('Perjalanan selesai. Terima kasih!');
             _resetToInitialState();
-            _fetchWalletBalance(); // Refresh balance after ride completion
-            context.go('/'); // Or navigate to order history
+            _fetchWalletBalance(); 
+            context.go('/'); 
           } else if (status == 'cancelled') {
             _showInstructionSnackbar(
               'Perjalanan dibatalkan.',
               color: AppColors.destinationRed,
             );
             _resetToInitialState();
-            _fetchWalletBalance(); // Refresh balance after ride cancellation
+            _fetchWalletBalance();
           }
         });
       }
     });
   }
 
-  // NEW FUNCTION: Listen to a specific driver's location
   void _listenToDriverLocation(String driverId) {
     _driverLocationListener
-        ?.cancel(); // Cancel any existing driver location listener
+        ?.cancel(); 
 
     _driverLocationListener = FirebaseService.listenToDriverLocation(driverId, (
       data,
@@ -702,13 +687,8 @@ void _onDestinationFocusChanged() {
         if (lat != null && lon != null) {
           setState(() {
             _driverLocation = LatLng(lat, lon);
-            _driverBearing = bearing; // Update bearing
+            _driverBearing = bearing;
           });
-          // You might want to animate the map to follow the driver, or just update the marker
-          // For simplicity, we'll just update the marker. If you want to auto-follow, consider:
-          // if (_rideStatus == 'in_progress' || _rideStatus == 'accepted') {
-          //   _mapController.move(_driverLocation!, _mapController.camera.zoom);
-          // }
         }
       }
     });
@@ -740,7 +720,7 @@ void _onDestinationFocusChanged() {
           _resetToInitialState();
         });
       }
-      _resetToInitialState(); // Ensure reset even if backend fails to return 200 but process locally
+      _resetToInitialState(); 
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -764,7 +744,7 @@ void _onDestinationFocusChanged() {
           _destinationSuggestions = [];
         }
         _isSearchingAddress =
-            value.isNotEmpty; // Set search state based on text
+            value.isNotEmpty; 
       });
       if (value.isNotEmpty) {
         try {
@@ -782,7 +762,6 @@ void _onDestinationFocusChanged() {
           }
         } catch (e) {
           print("Error fetching suggestions: $e");
-          // Optionally show a snackbar for search errors
         }
       }
     });
@@ -803,7 +782,7 @@ void _onDestinationFocusChanged() {
       }
     });
 
-    _addressLookupDebounce?.cancel(); // Cancel previous lookup
+    _addressLookupDebounce?.cancel(); 
     _addressLookupDebounce = Timer(const Duration(milliseconds: 500), () async {
       try {
         final result = await RouteUtils.reverseGeocode(location);
@@ -856,35 +835,31 @@ void _selectLocationFromSuggestion(
 
     setState(() {
       if (isPickup) {
-        _pickupLocation = newLocation; //
-        _selectedPickupAddress = address; //
-        _pickupController.text = address; //
-        _showPickupDropdown = false; //
-        // After selecting pickup, transition to destination selection
-        _currentStep = RideRequestStep.selectDestination; //
-        _crosshairColor = AppColors.destinationRed; // Update crosshair for next step
-        _showMapInstructions = true; // Show instructions for destination
+        _pickupLocation = newLocation; 
+        _selectedPickupAddress = address; 
+        _pickupController.text = address; 
+        _showPickupDropdown = false; 
+        _currentStep = RideRequestStep.selectDestination; 
+        _crosshairColor = AppColors.destinationRed; 
+        _showMapInstructions = true;
       } else {
-        _destinationLocation = newLocation; //
-        _selectedDestinationAddress = address; //
-        _destinationController.text = address; //
-        _showDestinationDropdown = false; //
-        // After selecting destination, if pickup is also set, move to confirm ride step
-        if (_pickupLocation != null) { //
-          _currentStep = RideRequestStep.confirmRide; //
-          _showMapInstructions = false; // No more instructions needed
+        _destinationLocation = newLocation; 
+        _selectedDestinationAddress = address;
+        _destinationController.text = address; 
+        _showDestinationDropdown = false; 
+        if (_pickupLocation != null) { 
+          _currentStep = RideRequestStep.confirmRide; 
+          _showMapInstructions = false;
         }
       }
-      _isSearchingAddress = false; // Turn off searching mode
-      // Update bottom panel size based on the NEW _currentStep
-      _bottomPanelSize = _getDefaultBottomPanelSizeForStep(_currentStep); //
+      _isSearchingAddress = false; 
+      _bottomPanelSize = _getDefaultBottomPanelSizeForStep(_currentStep); 
     });
-    _mapController.move(newLocation, 16); //
-    FocusScope.of(context).unfocus(); // This will close the keyboard
-    _updateCrosshairAndInstructions(); // Update colors/instructions based on new step
-    // If destination is selected and pickup exists, call calculateRoute to display it
-    if (_currentStep == RideRequestStep.confirmRide) { //
-      _calculateRoute(); //
+    _mapController.move(newLocation, 16); 
+    FocusScope.of(context).unfocus(); 
+    _updateCrosshairAndInstructions(); 
+    if (_currentStep == RideRequestStep.confirmRide) {
+      _calculateRoute();
     }
   }
 }
@@ -895,7 +870,6 @@ void _selectLocationFromSuggestion(
     if (_currentStep == RideRequestStep.confirmRide ||
         _currentStep == RideRequestStep.inRide ||
         _currentStep == RideRequestStep.selectPayment) {
-      // Prevent map interaction during payment or active ride
       return;
     }
     _crosshairController.forward().then((_) => _crosshairController.reverse());
@@ -908,7 +882,7 @@ void _selectLocationFromSuggestion(
     _reverseGeocodeAndSetAddress(latlng, isPickup: isPickupStep);
 
     setState(() {
-      _showMapInstructions = false; // Hide instructions after tap
+      _showMapInstructions = false; 
     });
     _updateCrosshairAndInstructions();
   }
@@ -1015,46 +989,45 @@ void _selectLocationFromSuggestion(
       _showMapInstructions = true;
       _bottomPanelSize = _getDefaultBottomPanelSizeForStep(
         _currentStep,
-      ); // Reset to initial default
+      );
       _pickupSuggestions.clear();
       _destinationSuggestions.clear();
       _showPickupDropdown = false;
       _showDestinationDropdown = false;
       _isMapMoving = false;
-      _selectedPaymentMethod = 'cash'; // Reset payment method
-      _isLookingUpAddress = false; // Reset address lookup state
-      _isSearchingAddress = false; // Reset searching state
+      _selectedPaymentMethod = 'cash'; 
+      _isLookingUpAddress = false; 
+      _isSearchingAddress = false;
 
-      // Clear driver details on reset
       _driverId = null;
       _driverName = null;
       _driverPlateNumber = null;
       _driverVehicle = null;
       _driverRating = null;
       _driverTotalTrips = null;
-      _driverLocation = null; // Clear driver location
-      _driverBearing = null; // Clear driver bearing
+      _driverLocation = null; 
+      _driverBearing = null;
     });
     if (_currentLocation != null) {
       _mapController.move(_currentLocation!, 15.0);
     }
     _searchDebounce?.cancel();
     _mapMoveDebounce?.cancel();
-    _addressLookupDebounce?.cancel(); // Cancel address lookup debounce
-    _driverLocationListener?.cancel(); // Cancel driver location listener
-    _rideStatusListener?.cancel(); // Cancel ride status listener
+    _addressLookupDebounce?.cancel(); 
+    _driverLocationListener?.cancel(); 
+    _rideStatusListener?.cancel();
   }
 
   @override
   void dispose() {
     _crosshairController.dispose();
     _rideStatusListener?.cancel();
-    _driverLocationListener?.cancel(); // NEW: Cancel driver location listener
+    _driverLocationListener?.cancel();
     _pickupController.dispose();
     _destinationController.dispose();
     _searchDebounce?.cancel();
     _mapMoveDebounce?.cancel();
-    _addressLookupDebounce?.cancel(); // NEW: Cancel address lookup debounce
+    _addressLookupDebounce?.cancel();
     _pickupFocusNode.removeListener(_onPickupFocusChanged);
     _destinationFocusNode.removeListener(_onDestinationFocusChanged);
     _pickupFocusNode.dispose();
@@ -1090,9 +1063,7 @@ void _selectLocationFromSuggestion(
                 ),
               ),
             ),
-          // Search input fields and suggestions are now always at the top
           _buildSearchAndSuggestions(),
-          // Bottom panel is always present, its height adjusts
           Positioned.fill(
             child: Align(
               alignment: Alignment.bottomCenter,
@@ -1104,29 +1075,26 @@ void _selectLocationFromSuggestion(
     );
   }
 
-  // New widget to encapsulate search inputs and suggestions at the top
   Widget _buildSearchAndSuggestions() {
     final screenHeight = MediaQuery.of(context).size.height;
     final topPadding = MediaQuery.of(context).padding.top;
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
-    // Adjust max height for suggestions based on keyboard presence
     double maxSuggestionHeight =
         screenHeight * 0.8 - topPadding - kToolbarHeight;
     if (keyboardHeight > 0) {
       maxSuggestionHeight =
-          screenHeight - topPadding - keyboardHeight - 100; // Adjust as needed
+          screenHeight - topPadding - keyboardHeight - 100;
     }
 
     return Positioned(
-      top: topPadding + 12, // Reduced top padding
-      left: 12, // Reduced side padding
-      right: 12, // Reduced side padding
+      top: topPadding + 12, 
+      left: 12, 
+      right: 12,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildHeader(),
-          // Suggestions list should be shown if there are suggestions AND a focus node is active
           if ((_showPickupDropdown && _pickupSuggestions.isNotEmpty) ||
               (_showDestinationDropdown && _destinationSuggestions.isNotEmpty))
             ConstrainedBox(
@@ -1206,13 +1174,13 @@ void _selectLocationFromSuggestion(
           ],
         ),
         if (_showMapInstructions &&
-            _rideStatus == "idle") // Removed _isSearchingAddress condition
+            _rideStatus == "idle") 
           Positioned(
             top: 150,
             left: 16,
             right: 16,
             child: Container(
-              padding: const EdgeInsets.all(10), // Smaller padding
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: (isPickupStep
                         ? AppColors.mutedGreen
@@ -1233,7 +1201,7 @@ void _selectLocationFromSuggestion(
                     Icons.touch_app,
                     color: AppColors.white,
                     size: 18,
-                  ), // Smaller icon
+                  ), 
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -1243,7 +1211,7 @@ void _selectLocationFromSuggestion(
                       style: const TextStyle(
                         color: AppColors.white,
                         fontWeight: FontWeight.w500,
-                        fontSize: 13, // Smaller font size
+                        fontSize: 13, 
                       ),
                     ),
                   ),
@@ -1251,7 +1219,7 @@ void _selectLocationFromSuggestion(
                     icon: const Icon(
                       Icons.close,
                       color: AppColors.white,
-                      size: 16, // Smaller icon
+                      size: 16,
                     ),
                     onPressed: () {
                       setState(() => _showMapInstructions = false);
@@ -1264,7 +1232,6 @@ void _selectLocationFromSuggestion(
             ),
           ),
         Positioned(
-          // Adjust position based on _bottomPanelSize to avoid overlap when panel is hidden
           bottom: _bottomPanelSize * MediaQuery.of(context).size.height + 13,
           right: 16,
           child: FloatingActionButton(
@@ -1291,18 +1258,17 @@ void _selectLocationFromSuggestion(
   List<Marker> _buildMarkers() {
     final markers = <Marker>[];
 
-    // Current Location Marker
     if (_currentLocation != null) {
       markers.add(
         Marker(
-          width: 32.0, // Smaller marker
-          height: 32.0, // Smaller marker
+          width: 32.0,
+          height: 32.0,
           point: _currentLocation!,
           child: Container(
             child: Center(
               child: Container(
-                width: 16, // Smaller
-                height: 16, // Smaller
+                width: 16,
+                height: 16,
                 decoration: BoxDecoration(
                   color: AppColors.accentBlue,
                   shape: BoxShape.circle,
@@ -1322,44 +1288,43 @@ void _selectLocationFromSuggestion(
       );
     }
 
-    // Pickup Location Marker
     if (_pickupLocation != null) {
       markers.add(
         Marker(
           point: _pickupLocation!,
-          width: 36, // Slightly smaller
-          height: 45, // Slightly smaller
+          width: 36,
+          height: 45,
           child: Stack(
             alignment: Alignment.center,
             children: [
               Container(
-                width: 28, // Smaller
-                height: 28, // Smaller
+                width: 28,
+                height: 28,
                 decoration: BoxDecoration(
                   color: AppColors.mutedGreen,
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: AppColors.white,
                     width: 2.5,
-                  ), // Slightly thinner border
+                  ), 
                   boxShadow: const [
                     BoxShadow(
                       color: Colors.black26,
-                      blurRadius: 5, // Subtler blur
-                      offset: Offset(0, 2), // Smaller offset
+                      blurRadius: 5, 
+                      offset: Offset(0, 2),
                     ),
                   ],
                 ),
                 child: const Icon(
                   Icons.person,
                   color: AppColors.white,
-                  size: 16, // Smaller icon
+                  size: 16,
                 ),
               ),
               Positioned(
                 bottom: 0,
                 child: CustomPaint(
-                  size: const Size(10, 7), // Smaller tail
+                  size: const Size(10, 7),
                   painter: MarkerTailPainter(AppColors.mutedGreen),
                 ),
               ),
@@ -1369,31 +1334,30 @@ void _selectLocationFromSuggestion(
       );
     }
 
-    // Destination Location Marker
     if (_destinationLocation != null) {
       markers.add(
         Marker(
           point: _destinationLocation!,
-          width: 36, // Slightly smaller
-          height: 45, // Slightly smaller
+          width: 36, 
+          height: 45, 
           child: Stack(
             alignment: Alignment.center,
             children: [
               Container(
-                width: 28, // Smaller
-                height: 28, // Smaller
+                width: 28, 
+                height: 28,
                 decoration: BoxDecoration(
                   color: AppColors.destinationRed,
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: AppColors.white,
                     width: 2.5,
-                  ), // Slightly thinner border
+                  ),
                   boxShadow: const [
                     BoxShadow(
                       color: Colors.black26,
-                      blurRadius: 5, // Subtler blur
-                      offset: Offset(0, 2), // Smaller offset
+                      blurRadius: 5,
+                      offset: Offset(0, 2),
                     ),
                   ],
                 ),
@@ -1401,12 +1365,12 @@ void _selectLocationFromSuggestion(
                   Icons.flag,
                   color: AppColors.white,
                   size: 16,
-                ), // Smaller icon
+                ),
               ),
               Positioned(
                 bottom: 0,
                 child: CustomPaint(
-                  size: const Size(10, 7), // Smaller tail
+                  size: const Size(10, 7), 
                   painter: MarkerTailPainter(AppColors.destinationRed),
                 ),
               ),
@@ -1416,24 +1380,22 @@ void _selectLocationFromSuggestion(
       );
     }
 
-    // NEW: Driver Location Marker
     if (_driverLocation != null &&
         (_rideStatus == 'accepted' ||
             _rideStatus == 'in_progress' ||
             _rideStatus == 'driver_arrived')) {
       markers.add(
         Marker(
-          width: 50.0, // Adjusted size
-          height: 50.0, // Adjusted size
+          width: 50.0, 
+          height: 50.0,
           point: _driverLocation!,
-          rotate: true, // Enable rotation for bearing
+          rotate: true, 
           child: Transform.rotate(
             angle:
                 (_driverBearing ?? 0) *
-                (math.pi / 180), // Rotate marker based on bearing
+                (math.pi / 180),
             child: Image.asset(
-              'assets/icons/car_top_down.png', // <-- REPLACE WITH YOUR DRIVER ICON ASSET PATH
-              // Make sure to add this asset in your pubspec.yaml
+              'assets/icons/car_top_down.png',
             ),
           ),
         ),
@@ -1455,28 +1417,28 @@ void _selectLocationFromSuggestion(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 32, // Smaller
-                  height: 32, // Smaller
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
                     color: color,
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: AppColors.white,
                       width: 2.5,
-                    ), // Thinner border
+                    ),
                     boxShadow: const [
                       BoxShadow(
                         color: Colors.black26,
-                        blurRadius: 6, // Subtler
-                        offset: Offset(0, 3), // Smaller offset
+                        blurRadius: 6,
+                        offset: Offset(0, 3), 
                       ),
                     ],
                   ),
                   child:
                       _isMapMoving ||
-                              _isLookingUpAddress // Show loading if map moving or looking up address
+                              _isLookingUpAddress 
                           ? const Padding(
-                            padding: EdgeInsets.all(7.0), // Adjust padding
+                            padding: EdgeInsets.all(7.0), 
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               valueColor: AlwaysStoppedAnimation<Color>(
@@ -1488,10 +1450,10 @@ void _selectLocationFromSuggestion(
                             icon,
                             color: AppColors.white,
                             size: 18,
-                          ), // Smaller icon
+                          ),
                 ),
                 CustomPaint(
-                  size: const Size(10, 7), // Smaller tail
+                  size: const Size(10, 7),
                   painter: MarkerTailPainter(color),
                 ),
               ],
@@ -1503,18 +1465,28 @@ void _selectLocationFromSuggestion(
   }
 
   Widget _buildBottomPanel() {
+    // NEW: Added a flexible bottom padding to respect the safe area
+    final screenHeight = MediaQuery.of(context).size.height;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      height: _bottomPanelSize * MediaQuery.of(context).size.height,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      curve: Curves.easeInOut,
+      height: _bottomPanelSize * screenHeight + bottomPadding,
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: bottomPadding > 0 ? bottomPadding : 16, // Respect safe area
+      ),
       decoration: const BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black26,
+            color: Colors.black12,
             blurRadius: 20,
-            offset: Offset(0, -8),
+            offset: Offset(0, -4),
           ),
         ],
       ),
@@ -1525,7 +1497,7 @@ void _selectLocationFromSuggestion(
             width: 50,
             height: 5,
             decoration: BoxDecoration(
-              color: AppColors.lightGrey,
+              color: AppColors.mediumGrey.withOpacity(0.5),
               borderRadius: BorderRadius.circular(10),
             ),
           ),
@@ -1539,21 +1511,354 @@ void _selectLocationFromSuggestion(
   Widget _buildPanelContent() {
     switch (_currentStep) {
       case RideRequestStep.selectPickup:
-        return _buildPickupSelectionPanel(); // New method
+        return _buildPickupSelectionPanel();
       case RideRequestStep.selectDestination:
-        return _buildDestinationSelectionPanel(); // New method
+        return _buildDestinationSelectionPanel();
       case RideRequestStep.confirmRide:
-        return _buildRideInfo();
+        // --- NEW --- This is the major UI change
+        return _buildGojekStyleConfirmPanel();
       case RideRequestStep.selectPayment:
         return _buildPaymentSelection();
       case RideRequestStep.inRide:
         return _buildRideStatus();
       default:
-        return _buildPickupSelectionPanel(); // Fallback
+        return _buildPickupSelectionPanel();
     }
   }
+  
+  // --- NEW WIDGET ---
+  // The new Gojek-style confirmation panel.
+  Widget _buildGojekStyleConfirmPanel() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isLoading = _routePoints.isEmpty;
 
-  // NEW: Panel content for selecting pickup location
+    // Helper for currency formatting
+    final currencyFormatter = NumberFormat.currency(
+      locale: 'id_ID',
+      symbol: 'Rp',
+      decimalDigits: 0,
+    );
+    
+    // Placeholder for a discounted price, you can hook your logic here
+    final discountedPrice = _price;
+    final originalPrice = (_price * 1.25).toInt(); // Example: 25% more
+
+    // Shows placeholder UI while calculating route
+    if (isLoading) {
+      return _buildConfirmationPanelPlaceholder(screenWidth);
+    }
+    
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // --- Ride Options List ---
+        _buildRideOptionTile(
+          iconAsset: 'assets/icons/motor.png', // <-- TODO: Add this asset
+          serviceName: 'GoRide',
+          eta: '$_eta mins',
+          capacity: '1',
+          price: currencyFormatter.format(discountedPrice),
+          originalPrice: currencyFormatter.format(originalPrice),
+          isSelected: true, // Assuming GoRide is the only/selected option
+          screenWidth: screenWidth,
+        ),
+        SizedBox(height: screenWidth * 0.03),
+        _buildRideOptionTile(
+          iconAsset: 'assets/icons/car.png', // <-- TODO: Add this asset
+          serviceName: 'GoCar',
+          eta: '${(_eta * 1.5).ceil()} mins', // Example ETA
+          capacity: '2-4',
+          price: currencyFormatter.format((discountedPrice * 1.8).ceil()), // Example Price
+          originalPrice: currencyFormatter.format((originalPrice * 1.8).ceil()),
+          isSelected: false, // This is not selectable in this example
+          screenWidth: screenWidth,
+        ),
+        
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: screenWidth * 0.04),
+          child: Divider(color: AppColors.lightGrey, thickness: 2),
+        ),
+
+        // --- Payment Method Section ---
+        _buildPaymentSummary(screenWidth, currencyFormatter),
+
+        SizedBox(height: screenWidth * 0.05),
+
+        // --- Order Button ---
+        _buildOrderButton(
+          "Pesan GoRide",
+          currencyFormatter.format(discountedPrice),
+          () {
+            // Updated to go to payment selection first, then request ride
+             setState(() {
+              _currentStep = RideRequestStep.selectPayment;
+              _bottomPanelSize = _getDefaultBottomPanelSizeForStep(_currentStep);
+            });
+          },
+        ),
+      ],
+    );
+  }
+  
+  // --- NEW HELPER WIDGET ---
+  // Builds a single row for a ride option (like GoRide or GoCar)
+  Widget _buildRideOptionTile({
+    required String iconAsset,
+    required String serviceName,
+    required String eta,
+    required String capacity,
+    required String price,
+    required String? originalPrice,
+    required bool isSelected,
+    required double screenWidth,
+  }) {
+    return Opacity(
+      opacity: isSelected ? 1.0 : 0.5, // Dims non-selected options
+      child: Container(
+        padding: EdgeInsets.all(screenWidth * 0.02),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.lightOrange.withOpacity(0.3) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? AppColors.primaryOrange : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            // Icon
+            Image.asset(iconAsset, width: screenWidth * 0.12, errorBuilder: (c, o, s) => Icon(Icons.motorcycle, size: screenWidth * 0.12, color: AppColors.darkGrey)),
+            SizedBox(width: screenWidth * 0.03),
+            
+            // Service Info
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  serviceName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: screenWidth * 0.04,
+                    color: AppColors.textBlack,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      eta,
+                      style: TextStyle(
+                        fontSize: screenWidth * 0.032,
+                        color: AppColors.darkGrey,
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Icon(Icons.person, size: screenWidth * 0.035, color: AppColors.darkGrey),
+                    SizedBox(width: 4),
+                    Text(
+                      capacity,
+                       style: TextStyle(
+                        fontSize: screenWidth * 0.032,
+                        color: AppColors.darkGrey,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            Spacer(),
+
+            // Price Info
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  price,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: screenWidth * 0.04,
+                    color: AppColors.textBlack,
+                  ),
+                ),
+                if (originalPrice != null) ...[
+                  SizedBox(height: 2),
+                  Text(
+                    originalPrice,
+                    style: TextStyle(
+                      fontSize: screenWidth * 0.032,
+                      color: AppColors.mediumGrey,
+                      decoration: TextDecoration.lineThrough,
+                    ),
+                  ),
+                ]
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- NEW HELPER WIDGET ---
+  // Builds the payment summary row
+  Widget _buildPaymentSummary(double screenWidth, NumberFormat currencyFormatter) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _currentStep = RideRequestStep.selectPayment;
+          _bottomPanelSize = _getDefaultBottomPanelSizeForStep(_currentStep);
+        });
+      },
+      child: Container(
+        color: Colors.transparent, // Makes the whole area tappable
+        child: Row(
+          children: [
+            Icon(
+              _selectedPaymentMethod == 'xpay' ? Icons.account_balance_wallet : Icons.money,
+              color: AppColors.primaryOrange,
+              size: screenWidth * 0.06,
+            ),
+            SizedBox(width: screenWidth * 0.03),
+            Text(
+              _selectedPaymentMethod == 'xpay' ? 'XPay' : 'Tunai',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: screenWidth * 0.038,
+              ),
+            ),
+            SizedBox(width: screenWidth * 0.02),
+            Icon(Icons.expand_more, color: AppColors.darkGrey, size: screenWidth * 0.04),
+            Spacer(),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.lightOrange.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(6)
+              ),
+              child: Text(
+                'Promo applied!',
+                style: TextStyle(
+                  color: AppColors.darkerOrange,
+                  fontWeight: FontWeight.bold,
+                  fontSize: screenWidth * 0.03,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- NEW HELPER WIDGET ---
+  // Builds the final order button
+  Widget _buildOrderButton(String title, String price, VoidCallback onPressed) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.mutedGreen,
+        minimumSize: Size(double.infinity, 50),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30),
+        ),
+        elevation: 4,
+        shadowColor: AppColors.mutedGreen.withOpacity(0.4),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  price,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                SizedBox(width: 8),
+                Icon(Icons.arrow_forward_ios, size: 14, color: Colors.white),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  // --- NEW HELPER WIDGET ---
+  // Placeholder shown while loading/calculating the route.
+  Widget _buildConfirmationPanelPlaceholder(double screenWidth) {
+    // Helper to create a single placeholder box
+    Widget placeholderBox(double width, double height, {double radius = 8}) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: Colors.black, // Shimmer base color
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      );
+    }
+    
+    // Using a simple Fade animation instead of a new dependency for lightness
+    return TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.3, end: 1.0),
+        duration: const Duration(milliseconds: 800),
+        builder: (context, value, child) {
+          return Opacity(
+            opacity: value,
+            child: child,
+          );
+        },
+        child: Column(
+            children: List.generate(2, (index) => Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Row(
+                children: [
+                  placeholderBox(screenWidth * 0.12, screenWidth * 0.12, radius: screenWidth * 0.06),
+                  SizedBox(width: screenWidth * 0.03),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      placeholderBox(screenWidth * 0.2, 16),
+                      SizedBox(height: 8),
+                      placeholderBox(screenWidth * 0.3, 12),
+                    ],
+                  ),
+                  Spacer(),
+                  Column(
+                     crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      placeholderBox(screenWidth * 0.2, 16),
+                      SizedBox(height: 8),
+                      placeholderBox(screenWidth * 0.15, 12),
+                    ],
+                  )
+                ],
+              ),
+            )),
+          ),
+    );
+  }
+
+
   Widget _buildPickupSelectionPanel() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1605,13 +1910,12 @@ void _selectLocationFromSuggestion(
     );
   }
 
-  // NEW: Panel content for selecting destination location
   Widget _buildDestinationSelectionPanel() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (_pickupLocation == null)
-          _buildPickupSelectionPanel() // Go back to pickup if not set
+          _buildPickupSelectionPanel()
         else if (_destinationLocation == null)
           Text(
             "Pilih lokasi tujuanmu di peta atau cari alamat di atas.",
@@ -1627,7 +1931,7 @@ void _selectLocationFromSuggestion(
                   onPressed: () {
                     if (_pickupLocation != null &&
                         _destinationLocation != null) {
-                      _calculateRoute(); // This transitions to confirmRide step
+                      _calculateRoute(); 
                     } else {
                       _showInstructionSnackbar(
                         "Mohon pilih lokasi jemput dan tujuan.",
@@ -1644,7 +1948,7 @@ void _selectLocationFromSuggestion(
                     elevation: 2,
                   ),
                   child: const Text(
-                    "Konfirmasi Destinasi & Hitung Rute", // More explicit
+                    "Konfirmasi Destinasi & Hitung Rute", 
                     style: TextStyle(
                       fontSize: 15,
                       color: Colors.white,
@@ -1678,7 +1982,6 @@ void _selectLocationFromSuggestion(
     );
   }
 
-  // NEW: Helper widget to display selected location (for both pickup and destination)
   Widget _buildLocationDisplayRow({
     required String label,
     required String address,
@@ -1741,15 +2044,15 @@ void _selectLocationFromSuggestion(
       return const SizedBox.shrink();
     }
     return Container(
-      margin: const EdgeInsets.only(top: 6), // Reduced margin
+      margin: const EdgeInsets.only(top: 6),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10), // Smaller radius
+        borderRadius: BorderRadius.circular(10),
         boxShadow: const [
           BoxShadow(
             color: Colors.black12,
-            blurRadius: 12, // Subtler blur
-            offset: Offset(0, 3), // Smaller offset
+            blurRadius: 12, 
+            offset: Offset(0, 3), 
           ),
         ],
       ),
@@ -1757,29 +2060,29 @@ void _selectLocationFromSuggestion(
         shrinkWrap: true,
         padding: const EdgeInsets.symmetric(
           vertical: 6,
-        ), // Reduced vertical padding
+        ),
         itemCount: math.min(suggestions.length, 6),
         separatorBuilder:
             (context, index) =>
-                const Divider(height: 1, indent: 48), // Denser divider
+                const Divider(height: 1, indent: 48),
         itemBuilder: (context, index) {
           final location = suggestions[index];
           return ListTile(
             dense: true,
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 14, // Reduced horizontal padding
-              vertical: 2, // Reduced vertical padding
+              horizontal: 14,
+              vertical: 2,
             ),
             leading: Container(
-              width: 32, // Smaller
-              height: 32, // Smaller
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 color: Colors.grey.shade50,
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.location_on_outlined,
-                size: 18, // Smaller icon
+                size: 18,
                 color: AppColors.primaryOrange,
               ),
             ),
@@ -1788,7 +2091,7 @@ void _selectLocationFromSuggestion(
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
-              ), // Smaller font
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1797,7 +2100,7 @@ void _selectLocationFromSuggestion(
                     ? Text(
                       location['fullName'].split(', ').skip(1).join(', '),
                       style: TextStyle(
-                        fontSize: 11, // Smaller font
+                        fontSize: 11,
                         color: Colors.grey.shade600,
                       ),
                       maxLines: 1,
@@ -1807,7 +2110,7 @@ void _selectLocationFromSuggestion(
                         ? Text(
                           location['address'],
                           style: TextStyle(
-                            fontSize: 11, // Smaller font
+                            fontSize: 11,
                             color: Colors.grey.shade600,
                           ),
                           maxLines: 1,
@@ -1824,178 +2127,6 @@ void _selectLocationFromSuggestion(
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 3.0,
-      ), // Reduced vertical padding
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(color: Colors.grey[700], fontSize: 13),
-          ), // Smaller font
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-          ), // Smaller font
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRideInfo() {
-    final hasRoute = _routePoints.isNotEmpty;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      margin: const EdgeInsets.only(top: 12), // Reduced margin
-      padding: const EdgeInsets.all(14), // Reduced padding
-      decoration: BoxDecoration(
-        gradient:
-            hasRoute
-                ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.lightGrey, AppColors.lightOrange],
-                )
-                : null,
-        borderRadius: BorderRadius.circular(14), // Smaller radius
-        border:
-            hasRoute
-                ? Border.all(color: AppColors.primaryOrange, width: 1)
-                : null, // Thinner border
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!hasRoute)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(
-                  width: 14, // Smaller
-                  height: 14, // Smaller
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primaryOrange,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  "Menghitung rute...",
-                  style: const TextStyle(
-                    fontSize: 13, // Smaller font
-                    color: AppColors.darkGrey,
-                  ),
-                ),
-              ],
-            ),
-          if (hasRoute) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildInfoItem(
-                  Icons.straighten,
-                  "${_distance.toStringAsFixed(1)} km",
-                  "Jarak",
-                  AppColors.accentBlue,
-                ),
-                _buildInfoItem(
-                  Icons.access_time,
-                  "$_eta menit",
-                  "Waktu",
-                  AppColors.darkerOrange,
-                ),
-                _buildInfoItem(
-                  Icons.payments,
-                  NumberFormat.currency(
-                    locale: 'id_ID',
-                    symbol: 'Rp ',
-                    decimalDigits: 0,
-                  ).format(_price),
-                  "Estimasi",
-                  AppColors.mutedGreen,
-                ),
-              ],
-            ),
-            const SizedBox(height: 18), // Reduced spacing
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _currentStep = RideRequestStep.selectPayment;
-                    _bottomPanelSize = _getDefaultBottomPanelSizeForStep(
-                      _currentStep,
-                    );
-                  });
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      AppColors
-                          .mutedGreen, // Use muted green for primary action
-                  disabledBackgroundColor: Colors.grey.shade300,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 14,
-                  ), // Smaller padding
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10), // Smaller radius
-                  ),
-                  elevation: 2, // Subtler elevation
-                ),
-                child: Text(
-                  "Konfirmasi Perjalanan • ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_price)}",
-                  style: const TextStyle(
-                    fontSize: 15, // Smaller font
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoItem(
-    IconData icon,
-    String value,
-    String label,
-    Color color,
-  ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(7), // Slightly smaller padding
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: color, size: 22), // Slightly smaller icon
-        ),
-        const SizedBox(height: 5), // Reduced spacing
-        Text(
-          value,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ), // Smaller font
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            color: Colors.grey.shade600,
-          ), // Smaller font
-        ),
-      ],
-    );
-  }
-
   Widget _buildPaymentSelection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2003,17 +2134,17 @@ void _selectLocationFromSuggestion(
         const Text(
           "Pilih Metode Pembayaran",
           style: TextStyle(
-            fontSize: 18, // Slightly smaller
+            fontSize: 18, 
             fontWeight: FontWeight.bold,
             color: AppColors.textBlack,
           ),
         ),
-        const SizedBox(height: 14), // Reduced spacing
+        const SizedBox(height: 14),
         Container(
-          padding: const EdgeInsets.all(14), // Reduced padding
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: AppColors.lightGrey,
-            borderRadius: BorderRadius.circular(12), // Smaller radius
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
             children: [
@@ -2023,7 +2154,7 @@ void _selectLocationFromSuggestion(
                 subtitle: "Bayar langsung ke pengemudi",
                 value: 'cash',
               ),
-              const Divider(height: 18), // Reduced height
+              const Divider(height: 18),
               _buildPaymentOption(
                 icon: Icons.account_balance_wallet,
                 title: "XPay",
@@ -2037,7 +2168,7 @@ void _selectLocationFromSuggestion(
             ],
           ),
         ),
-        const SizedBox(height: 18), // Reduced spacing
+        const SizedBox(height: 18), 
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
@@ -2046,16 +2177,16 @@ void _selectLocationFromSuggestion(
               backgroundColor: AppColors.primaryOrange,
               padding: const EdgeInsets.symmetric(
                 vertical: 14,
-              ), // Smaller padding
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10), // Smaller radius
               ),
-              elevation: 2, // Subtler elevation
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              elevation: 2,
             ),
             child: Text(
               "Pesan Sekarang • ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_price)}",
               style: const TextStyle(
-                fontSize: 15, // Smaller font
+                fontSize: 15, 
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
@@ -2079,9 +2210,9 @@ void _selectLocationFromSuggestion(
               side: const BorderSide(color: AppColors.primaryOrange),
               padding: const EdgeInsets.symmetric(
                 vertical: 13,
-              ), // Smaller padding
+              ),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10), // Smaller radius
+                borderRadius: BorderRadius.circular(10),
               ),
             ),
             child: const Text(
@@ -2089,7 +2220,7 @@ void _selectLocationFromSuggestion(
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
-              ), // Smaller font
+              ), 
             ),
           ),
         ),
@@ -2133,15 +2264,15 @@ void _selectLocationFromSuggestion(
           padding: const EdgeInsets.symmetric(
             horizontal: 10,
             vertical: 8,
-          ), // Reduced padding
+          ), 
           child: Row(
             children: [
               Icon(
                 icon,
                 color: AppColors.primaryOrange,
                 size: 24,
-              ), // Smaller icon
-              const SizedBox(width: 14), // Reduced spacing
+              ),
+              const SizedBox(width: 14), 
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2149,7 +2280,7 @@ void _selectLocationFromSuggestion(
                     Text(
                       title,
                       style: TextStyle(
-                        fontSize: 15, // Smaller font
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
                         color: textColor,
                       ),
@@ -2159,7 +2290,7 @@ void _selectLocationFromSuggestion(
                       style: TextStyle(
                         fontSize: 12,
                         color: subtitleColor,
-                      ), // Smaller font
+                      ),
                     ),
                   ],
                 ),
@@ -2169,7 +2300,7 @@ void _selectLocationFromSuggestion(
                   Icons.check_circle,
                   color: AppColors.primaryOrange,
                   size: 20,
-                ), // Smaller icon
+                ),
             ],
           ),
         ),
@@ -2246,7 +2377,7 @@ void _selectLocationFromSuggestion(
             ),
             const SizedBox(height: 16),
             if (_driverName != null)
-              _buildDriverInfoCard(), // Show driver details
+              _buildDriverInfoCard(),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -2363,7 +2494,6 @@ void _selectLocationFromSuggestion(
     );
   }
 
-  // NEW: Widget to display driver information
   Widget _buildDriverInfoCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -2434,7 +2564,6 @@ void _selectLocationFromSuggestion(
     );
   }
 
-  // NEW: Helper for driver action icons
   Widget _buildDriverActionIcon(
     IconData icon,
     String label,
@@ -2457,9 +2586,6 @@ void _selectLocationFromSuggestion(
     );
   }
 
-  // Helper for DottedLinePainter
-
-  // Helper for address input field (extracting from _buildHeader to keep it clean)
   Widget _buildAddressInputField({
     required TextEditingController controller,
     required FocusNode focusNode,
@@ -2500,7 +2626,6 @@ void _selectLocationFromSuggestion(
   }
 
   Widget _buildHeader() {
-    // Show input fields if currently searching or locations are not set
     final bool showInputFields =
         _isSearchingAddress ||
         _pickupLocation == null ||
@@ -2564,7 +2689,7 @@ void _selectLocationFromSuggestion(
               ),
               if (_pickupLocation != null &&
                   _rideStatus == "idle" &&
-                  !showInputFields) // Show clear only when not searching
+                  !showInputFields)
                 IconButton(
                   icon: const Icon(Icons.clear, size: 18),
                   onPressed: () {
@@ -2638,9 +2763,9 @@ void _selectLocationFromSuggestion(
               ),
               if (_destinationLocation != null &&
                   _rideStatus == "idle" &&
-                  !showInputFields) // Show clear only when not searching
+                  !showInputFields)
                 IconButton(
-                  icon: const Icon(Icons.clear, size: 18), // Smaller icon
+                  icon: const Icon(Icons.clear, size: 18), 
                   onPressed: () {
                     _destinationController.clear();
                     setState(() {
@@ -2649,7 +2774,6 @@ void _selectLocationFromSuggestion(
                       _destinationSuggestions.clear();
                       _showDestinationDropdown = false;
                       _isSearchingAddress = false;
-                      // If only destination is cleared, go back to destination selection step
                       if (_pickupLocation != null) {
                         _currentStep = RideRequestStep.selectDestination;
                         _bottomPanelSize = _getDefaultBottomPanelSizeForStep(
@@ -2694,5 +2818,3 @@ class DottedLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-
-

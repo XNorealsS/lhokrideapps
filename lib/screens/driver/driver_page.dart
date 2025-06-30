@@ -56,6 +56,7 @@ class _DriverPageState extends State<DriverPage> with WidgetsBindingObserver {
   String _driverTotalTrips = "0";
 
   String _xpayBalance = "Rp 0"; // Saldo XPay
+  final String _apiBaseUrl = 'https://api.lhokride.com';
 
   @override
   void initState() {
@@ -115,25 +116,39 @@ class _DriverPageState extends State<DriverPage> with WidgetsBindingObserver {
   }
 
   Future<void> _loadXpayBalance() async {
-    await Future.delayed(const Duration(milliseconds: 500));
     try {
-      final storedBalance = await _storage.read(key: 'saldo');
-      if (mounted) {
-        final parsedBalance = int.tryParse(storedBalance ?? '0') ?? 0;
-        final formattedBalance = NumberFormat.currency(
-          locale: 'id_ID',
-          symbol: 'Rp ',
-          decimalDigits: 0,
-        ).format(parsedBalance);
-        setState(() => _xpayBalance = formattedBalance);
-        debugPrint('XPay balance loaded: $_xpayBalance');
+      final token = await _storage.read(key: 'token');
+      if (token != null && token.isNotEmpty) {
+        final response = await http.get(
+          Uri.parse('$_apiBaseUrl/api/auth/profile'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final saldo = data['user']['saldo']?.toString() ?? '0';
+          await _storage.write(key: 'saldo', value: saldo);
+
+          final parsedBalance = int.tryParse(saldo) ?? 0;
+          final formattedBalance = NumberFormat.currency(
+            locale: 'id_ID',
+            symbol: 'Rp ',
+            decimalDigits: 0,
+          ).format(parsedBalance);
+
+          if (mounted) {
+            setState(() => _xpayBalance = formattedBalance);
+          }
+        }
       }
     } catch (e) {
-      debugPrint('Error loading XPay balance: $e');
+      debugPrint('Error fetching balance: $e');
       if (mounted) {
-        setState(() {
-          _xpayBalance = 'Rp 0'; // Default to 0 if fails
-        });
+        setState(() => _xpayBalance = 'Rp 0');
       }
     }
   }
@@ -628,211 +643,219 @@ class _DriverPageState extends State<DriverPage> with WidgetsBindingObserver {
         }
         return true;
       },
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF8F9FA),
-        body: RefreshIndicator(
-          onRefresh: () async {
-          context.go('/');
-
-            await Future.delayed(Duration(milliseconds: 500));
-          },
-          child: CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              // Compact App Bar
-              SliverAppBar(
-                expandedHeight: screenHeight * 0.16,
-                floating: true,
-                pinned: true,
-                elevation: 0,
-                backgroundColor: const Color(0xFFF9A825),
-                flexibleSpace: FlexibleSpaceBar(
-                  background: Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xFFF9A825), Color(0xFFF57F17)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                    ),
-                    child: SafeArea(
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          screenWidth * 0.04,
-                          screenHeight * 0.01,
-                          screenWidth * 0.04,
-                          screenHeight * 0.02,
+      child: PageWithBottomNav(
+        activeTab: 'home',
+        userRole: _userRole ?? 'guest',
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF8F9FA),
+          body: RefreshIndicator(
+            onRefresh: () async {
+              await _loadXpayBalance();
+              await Future.delayed(Duration(milliseconds: 500));
+            },
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                // Compact App Bar
+                SliverAppBar(
+                  expandedHeight: screenHeight * 0.16,
+                  floating: true,
+                  pinned: true,
+                  elevation: 0,
+                  backgroundColor: const Color(0xFFF9A825),
+                  flexibleSpace: FlexibleSpaceBar(
+                    background: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFFF9A825), Color(0xFFF57F17)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                // Driver Info
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        "Halo, $_driverName!",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: screenWidth * 0.045,
-                                          fontWeight: FontWeight.w600,
+                      ),
+                      child: SafeArea(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            screenWidth * 0.04,
+                            screenHeight * 0.01,
+                            screenWidth * 0.04,
+                            screenHeight * 0.02,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  // Driver Info
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          "Halo, $_driverName!",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: screenWidth * 0.045,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      SizedBox(height: screenHeight * 0.005),
-                                      Row(
-                                        children: [
-                                          Container(
-                                            width: screenWidth * 0.02,
-                                            height: screenWidth * 0.02,
-                                            decoration: BoxDecoration(
-                                              color: _getStatusColor(),
-                                              shape: BoxShape.circle,
-                                            ),
-                                          ),
-                                          SizedBox(width: screenWidth * 0.02),
-                                          Text(
-                                            _getStatusDisplayText(),
-                                            style: TextStyle(
-                                              color: Colors.white.withOpacity(
-                                                0.9,
+                                        SizedBox(height: screenHeight * 0.005),
+                                        Row(
+                                          children: [
+                                            Container(
+                                              width: screenWidth * 0.02,
+                                              height: screenWidth * 0.02,
+                                              decoration: BoxDecoration(
+                                                color: _getStatusColor(),
+                                                shape: BoxShape.circle,
                                               ),
-                                              fontSize: screenWidth * 0.032,
-                                              fontWeight: FontWeight.w500,
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                // Online Switch
-                                Container(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: screenWidth * 0.03,
-                                    vertical: screenHeight * 0.008,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(
-                                      screenWidth * 0.06,
+                                            SizedBox(width: screenWidth * 0.02),
+                                            Text(
+                                              _getStatusDisplayText(),
+                                              style: TextStyle(
+                                                color: Colors.white.withOpacity(
+                                                  0.9,
+                                                ),
+                                                fontSize: screenWidth * 0.032,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        _isOnlineSwitch ? "Online" : "Offline",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: screenWidth * 0.03,
-                                          fontWeight: FontWeight.w500,
-                                        ),
+                                  // Online Switch
+                                  Container(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: screenWidth * 0.03,
+                                      vertical: screenHeight * 0.008,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(
+                                        screenWidth * 0.06,
                                       ),
-                                      SizedBox(width: screenWidth * 0.02),
-                                      Transform.scale(
-                                        scale: 0.7,
-                                        child: Switch(
-                                          value: _isOnlineSwitch,
-                                          onChanged: (newValue) async {
-                                            HapticFeedback.lightImpact();
-                                            setState(() {
-                                              _isOnlineSwitch = newValue;
-                                            });
-                                            await FirebaseService.updateDriverStatus(
-                                              _driverId,
-                                              newValue,
-                                            );
-                                            if (newValue) {
-                                              _checkLocationPermissionAndStartUpdates();
-                                              _startOrderListeners();
-                                            } else {
-                                              _stopLocationUpdates();
-                                              _stopOrderListeners();
-                                              if (_isRequestPopupShowing) {
-                                                Navigator.of(context).pop();
-                                                _isRequestPopupShowing = false;
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _isOnlineSwitch
+                                              ? "Online"
+                                              : "Offline",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: screenWidth * 0.03,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        SizedBox(width: screenWidth * 0.02),
+                                        Transform.scale(
+                                          scale: 0.7,
+                                          child: Switch(
+                                            value: _isOnlineSwitch,
+                                            onChanged: (newValue) async {
+                                              HapticFeedback.lightImpact();
+                                              setState(() {
+                                                _isOnlineSwitch = newValue;
+                                              });
+                                              await FirebaseService.updateDriverStatus(
+                                                _driverId,
+                                                newValue,
+                                              );
+                                              if (newValue) {
+                                                _checkLocationPermissionAndStartUpdates();
+                                                _startOrderListeners();
+                                              } else {
+                                                _stopLocationUpdates();
+                                                _stopOrderListeners();
+                                                if (_isRequestPopupShowing) {
+                                                  Navigator.of(context).pop();
+                                                  _isRequestPopupShowing =
+                                                      false;
+                                                }
                                               }
-                                            }
-                                          },
-                                          activeColor: Colors.white,
-                                          activeTrackColor:
-                                              Colors.green.shade400,
-                                          inactiveThumbColor: Colors.white,
-                                          inactiveTrackColor:
-                                              Colors.red.shade300,
-                                          materialTapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
+                                            },
+                                            activeColor: Colors.white,
+                                            activeTrackColor:
+                                                Colors.green.shade400,
+                                            inactiveThumbColor: Colors.white,
+                                            inactiveTrackColor:
+                                                Colors.red.shade300,
+                                            materialTapTargetSize:
+                                                MaterialTapTargetSize
+                                                    .shrinkWrap,
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
 
-              // Content
-              SliverPadding(
-                padding: EdgeInsets.all(screenWidth * 0.04),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    // Balance Card - Compact
-                    _buildCompactBalanceCard(screenWidth, screenHeight),
+                // Content
+                SliverPadding(
+                  padding: EdgeInsets.all(screenWidth * 0.04),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      // Balance Card - Compact
+                      _buildCompactBalanceCard(screenWidth, screenHeight),
 
-                    SizedBox(height: screenHeight * 0.015),
+                      SizedBox(height: screenHeight * 0.015),
 
-                    // Current Order or Status
-                    if (_currentOrderId != null)
-                      _buildCompactOrderCard(screenWidth, screenHeight)
-                    else
-                      _buildCompactStatusCard(screenWidth, screenHeight),
+                      // Current Order or Status
+                      if (_currentOrderId != null)
+                        _buildCompactOrderCard(screenWidth, screenHeight)
+                      else
+                        _buildCompactStatusCard(screenWidth, screenHeight),
 
-                    SizedBox(height: screenHeight * 0.02),
+                      SizedBox(height: screenHeight * 0.02),
 
-                    // Quick Actions Grid
-                    _buildQuickActionsGrid(screenWidth, screenHeight),
+                      // Quick Actions Grid
+                      _buildQuickActionsGrid(screenWidth, screenHeight),
 
-                    SizedBox(height: screenHeight * 0.02),
+                      SizedBox(height: screenHeight * 0.02),
 
-                    // Driver Stats Card
-                    _buildCompactDriverStats(screenWidth, screenHeight),
+                      // Driver Stats Card
+                      _buildCompactDriverStats(screenWidth, screenHeight),
 
-                    SizedBox(height: screenHeight * 0.03),
+                      SizedBox(height: screenHeight * 0.03),
 
-                    // Features Section
-                    Text(
-                      "Layanan Lainnya",
-                      style: TextStyle(
-                        fontSize: screenWidth * 0.042,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
+                      // Features Section
+                      Text(
+                        "Layanan Lainnya",
+                        style: TextStyle(
+                          fontSize: screenWidth * 0.042,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[800],
+                        ),
                       ),
-                    ),
 
-                    SizedBox(height: screenHeight * 0.015),
+                      SizedBox(height: screenHeight * 0.015),
 
-                    // Feature Grid
-                    _buildFeatureGrid(context, screenWidth, screenHeight),
+                      // Feature Grid
+                      _buildFeatureGrid(context, screenWidth, screenHeight),
 
-                    SizedBox(height: screenHeight * 0.02),
-                  ]),
+                      SizedBox(height: screenHeight * 0.02),
+                    ]),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
